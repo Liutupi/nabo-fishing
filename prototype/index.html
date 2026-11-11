@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>NABO 钓鱼小岛 · 玩法原型</title><style>
+* { box-sizing: border-box }
+body { margin: 0; background: #e1eee9; color: #102f38; font-family: 'Microsoft YaHei', sans-serif;
+       display: flex; min-height: 100vh; align-items: center; justify-content: center;
+       gap: 36px; flex-wrap: wrap; padding: 20px }
+.device { background: #172e33; border-radius: 30px; padding: 14px }
+.screen { position: relative; width: 240px; height: 320px; overflow: hidden;
+          border-radius: 25px; background: #102f38; color: #ffefd3 }
+.scene { width: 240px; height: 160px; position: relative;
+         background: center / cover url('../art/fishing-nabo.png') }
+.screen[data-page="3"] .scene, .screen[data-page="4"] .scene,
+.screen[data-page="5"] .scene, .screen[data-page="6"] .scene { background: #102f38 }
+.bar { z-index: 1; position: absolute; top: 12px; right: 16px; min-width: 100px;
+       background: #102f38; color: #ffc85e; text-align: center; border-radius: 7px; padding: 4px 6px; font-size: 13px }
+.line { position: absolute; left: 172px; top: 46px; height: 73px; border-left: 1px solid #ffefd3 }
+.float { position: absolute; left: 169px; top: 111px; width: 7px; height: 12px;
+         background: #ff714a; border-radius: 3px }
+.screen[data-page="2"] .float { animation: bob 180ms infinite alternate }
+@keyframes bob { to { transform: translateY(8px) } }
+.fish-art { position: absolute; left: 78px; top: 64px; width: 84px; height: 60px;
+            background-image: url('../art/fish-catalog-preview.png') }
+.panel { position: absolute; top: 153px; left: 10px; width: 220px; text-align: center }
+.placard { padding: 8px 3px; background: #194451; border-radius: 11px; height: 69px }
+.title { font-size: 20px; line-height: 1.45; font-weight: 800 }
+.hint { margin-top: 2px; color: #a6c3bc; font-size: 13px; line-height: 1.3 }
+.meter { height: 27px; margin: 14px 8px 0; border-radius: 7px; background: #194451; position: relative; overflow: hidden }
+.zone { position: absolute; top: 3px; height: 21px; background: #ffc85e; border-radius: 5px }
+.cursor { position: absolute; height: 100%; width: 5px; background: #ffefd3; transform: translateX(-50%); border-radius: 2px }
+.menu { display: flex; justify-content: center; gap: 4px; margin: 10px 2px 0; font-size: 13px }
+.menu div { padding: 7px 4px }
+.screen[data-page="0"] .menu div { flex: 1; border-radius: 7px; padding: 14px 0; background: #194451 }
+.screen[data-page="0"] .menu .sel { background: #ffc85e; color: #102f38; font-weight: bold }
+.buttons { display: flex; justify-content: space-around; margin-top: 14px }
+.buttons button { border: 0; border-radius: 50%; width: 49px; height: 49px; background: #536b6b; color: #fff; font-size: 17px; cursor: pointer }
+.info { max-width: 350px }
+.info h1 { font-size: 28px; margin: 0 0 8px }
+.info p { line-height: 1.7 }
+button:focus-visible { outline: 3px solid #ffc85e }
+</style></head><body><div class="device"><div class="screen" id="screen" data-page="0">
+<div class="bar" id="coins"></div>
+<div class="scene"><div class="line" id="line" hidden></div><div class="float" id="float" hidden></div><div class="fish-art" id="fish-art" hidden></div></div>
+<div class="panel"><div class="placard"><div class="title" id="title"></div><div class="hint" id="hint"></div></div>
+<div class="meter" id="meter" hidden><div class="zone" id="zone"></div><div class="cursor" id="cursor"></div></div><div class="menu" id="menu"></div></div></div><div class="buttons"><button id="up" aria-label="上键">↑</button><button id="down" aria-label="下键">↓</button><button id="ok" aria-label="确认键">OK</button></div></div><div class="info"><div class="tag">玩法原型 · 240 × 320</div><h1>🎣 NABO 钓鱼小岛</h1><p>抛竿、等待鱼儿咬钩，在指针进入金色区域时收竿。卖鱼赚取贝壳，升级鱼竿，慢慢集齐图鉴。</p><p>点击工牌上的三个按钮，或用键盘 <b>↑、↓、Enter</b> 操作。进度保存在本浏览器中。</p><p class="note">这是玩法验证版；可预览新版美术和玩法。</p><button id="reset">清除本浏览器原型存档</button></div><script src="species.js"></script><script src="rules.js"></script><script src="game.js"></script></body></html>

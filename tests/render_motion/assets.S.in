@@ -1,0 +1,29 @@
+.data
+.balign 4
+.global _binary_welcome_cover_rgb565_start
+_binary_welcome_cover_rgb565_start:
+.incbin "@GAME@/welcome_cover.rgb565"
+.balign 4
+.global _binary_intro_poses_pal_start
+_binary_intro_poses_pal_start:
+.incbin "@GAME@/intro_poses.pal"
+.balign 4
+.global _binary_shore_rgb565_start
+_binary_shore_rgb565_start:
+.incbin "@GAME@/shore.rgb565"
+.balign 4
+.global _binary_tank_rgb565_start
+_binary_tank_rgb565_start:
+.incbin "@GAME@/tank.rgb565"
+.balign 4
+.global _binary_nabo_night_rgb565a_start
+_binary_nabo_night_rgb565a_start:
+.incbin "@GAME@/nabo_night.rgb565a"
+.balign 4
+.global _binary_nabo_anim_rgb565a_start
+_binary_nabo_anim_rgb565a_start:
+.incbin "@GAME@/nabo_anim.rgb565a"
+.balign 4
+.global _binary_fish_anim_pal_start
+_binary_fish_anim_pal_start:
+.incbin "@GAME@/fish_anim.pal"

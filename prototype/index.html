@@ -4,15 +4,25 @@
 body { margin: 0; background: #e1eee9; color: #102f38; font-family: 'Microsoft YaHei', sans-serif;
        display: flex; min-height: 100vh; align-items: center; justify-content: center;
        gap: 36px; flex-wrap: wrap; padding: 20px }
-.device { background: #172e33; border-radius: 30px; padding: 14px }
+/* Portrait: keys sit on the right edge, like the badge. Landscape: the badge is
+   turned a quarter clockwise, so the same keys end up along the bottom. */
+.device { background: #172e33; border-radius: 30px; padding: 14px; display: flex; align-items: center; gap: 12px }
+.device.landscape { flex-direction: column }
 .screen { position: relative; width: 240px; height: 320px; overflow: hidden;
           border-radius: 25px; background: #102f38; color: #ffefd3 }
-.scene { width: 240px; height: 160px; position: relative;
-         background: center / cover url('../art/fishing-nabo.png') }
+.device.landscape .screen { width: 320px; height: 240px }
+.device.landscape .portrait, .device:not(.landscape) #tank { display: none }
+#tank { display: block }
+.scene { width: 240px; height: 160px; position: relative; background: center / cover var(--shore) }
 .screen[data-page="3"] .scene, .screen[data-page="4"] .scene,
-.screen[data-page="5"] .scene, .screen[data-page="6"] .scene { background: #102f38 }
-.bar { z-index: 1; position: absolute; top: 12px; right: 16px; min-width: 100px;
-       background: #102f38; color: #ffc85e; text-align: center; border-radius: 7px; padding: 4px 6px; font-size: 13px }
+.screen[data-page="5"] .scene, .screen[data-page="6"] .scene, .screen[data-page="7"] .scene { background: #102f38 }
+.screen[data-page="3"] #weather, .screen[data-page="4"] #weather,
+.screen[data-page="5"] #weather, .screen[data-page="6"] #weather, .screen[data-page="7"] #weather { display: none }
+#weather { position: absolute; left: 0; top: 0; pointer-events: none }
+.bar, .clock { z-index: 1; position: absolute; top: 12px; background: #102f38; text-align: center;
+               border-radius: 7px; padding: 4px 6px; font-size: 13px }
+.bar { right: 16px; min-width: 92px; color: #ffc85e }
+.clock { left: 16px; min-width: 76px; color: #ffefd3 }
 .line { position: absolute; left: 172px; top: 46px; height: 73px; border-left: 1px solid #ffefd3 }
 .float { position: absolute; left: 169px; top: 111px; width: 7px; height: 12px;
          background: #ff714a; border-radius: 3px }
@@ -26,19 +36,35 @@ body { margin: 0; background: #e1eee9; color: #102f38; font-family: 'Microsoft Y
 .hint { margin-top: 2px; color: #a6c3bc; font-size: 13px; line-height: 1.3 }
 .meter { height: 27px; margin: 14px 8px 0; border-radius: 7px; background: #194451; position: relative; overflow: hidden }
 .zone { position: absolute; top: 3px; height: 21px; background: #ffc85e; border-radius: 5px }
+.meter.danger .zone { background: #b65042 }
+.progress { height: 7px; margin: 4px 8px 0; border-radius: 4px; background: #194451; overflow: hidden }
+.progress > div { height: 100%; background: #68dbb9 }
 .cursor { position: absolute; height: 100%; width: 5px; background: #ffefd3; transform: translateX(-50%); border-radius: 2px }
 .menu { display: flex; justify-content: center; gap: 4px; margin: 10px 2px 0; font-size: 13px }
 .menu div { padding: 7px 4px }
 .screen[data-page="0"] .menu div { flex: 1; border-radius: 7px; padding: 14px 0; background: #194451 }
 .screen[data-page="0"] .menu .sel { background: #ffc85e; color: #102f38; font-weight: bold }
-.buttons { display: flex; justify-content: space-around; margin-top: 14px }
-.buttons button { border: 0; border-radius: 50%; width: 49px; height: 49px; background: #536b6b; color: #fff; font-size: 17px; cursor: pointer }
+.buttons { display: flex; flex-direction: column; gap: 14px }
+.device.landscape .buttons { flex-direction: row-reverse; gap: 40px }
+.buttons button { border: 0; border-radius: 50%; width: 46px; height: 46px; background: #536b6b; color: #fff; font-size: 16px; cursor: pointer }
 .info { max-width: 350px }
 .info h1 { font-size: 28px; margin: 0 0 8px }
 .info p { line-height: 1.7 }
+.debug { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0 }
+.debug button, #reset { padding: 6px 10px; border: 1px solid #7fa39c; border-radius: 7px; background: #fff; cursor: pointer }
 button:focus-visible { outline: 3px solid #ffc85e }
-</style></head><body><div class="device"><div class="screen" id="screen" data-page="0">
-<div class="bar" id="coins"></div>
-<div class="scene"><div class="line" id="line" hidden></div><div class="float" id="float" hidden></div><div class="fish-art" id="fish-art" hidden></div></div>
+</style></head><body><div class="device" id="device"><div class="screen" id="screen" data-page="0">
+<canvas id="tank" width="320" height="240"></canvas>
+<div class="portrait">
+<div class="clock" id="clock"></div><div class="bar" id="coins"></div>
+<div class="scene"><canvas id="weather" width="240" height="160"></canvas><div class="line" id="line" hidden></div><div class="float" id="float" hidden></div><div class="fish-art" id="fish-art" hidden></div></div>
 <div class="panel"><div class="placard"><div class="title" id="title"></div><div class="hint" id="hint"></div></div>
-<div class="meter" id="meter" hidden><div class="zone" id="zone"></div><div class="cursor" id="cursor"></div></div><div class="menu" id="menu"></div></div></div><div class="buttons"><button id="up" aria-label="上键">↑</button><button id="down" aria-label="下键">↓</button><button id="ok" aria-label="确认键">OK</button></div></div><div class="info"><div class="tag">玩法原型 · 240 × 320</div><h1>🎣 NABO 钓鱼小岛</h1><p>抛竿、等待鱼儿咬钩，在指针进入金色区域时收竿。卖鱼赚取贝壳，升级鱼竿，慢慢集齐图鉴。</p><p>点击工牌上的三个按钮，或用键盘 <b>↑、↓、Enter</b> 操作。进度保存在本浏览器中。</p><p class="note">这是玩法验证版；可预览新版美术和玩法。</p><button id="reset">清除本浏览器原型存档</button></div><script src="species.js"></script><script src="rules.js"></script><script src="game.js"></script></body></html>
+<div class="meter" id="meter" hidden><div class="zone" id="zone"></div><div class="cursor" id="cursor"></div></div><div class="progress" id="progress" hidden><div></div></div><div class="menu" id="menu"></div></div></div></div>
+<div class="buttons"><button id="up" aria-label="上键">上</button><button id="down" aria-label="下键">下</button><button id="ok" aria-label="确认键">OK</button></div></div>
+<div class="info"><div class="tag">玩法原型 · 240 × 320，鱼缸 320 × 240</div><h1>🎣 NABO 钓鱼小岛</h1>
+<p>选饵和打窝，瞄准抛竿，刺鱼后交替收线与放线。留鱼养在鱼缸，或出售换贝壳升级装备。</p>
+<p>岸边有清晨、白天、黄昏、夜晚和四季。每抛 3 竿过一个时段，一天 12 竿，一季 3 天。不同季节和时段出没的鱼不一样，图鉴里会写。钓前准备里可以“歇一会”直接等到下个时段。</p>
+<p>进鱼缸后工牌横过来拿，三个键在下边。六条鱼同屏游动，照料也在横屏里完成。</p>
+<p>点击工牌上的三个按钮，或用键盘 <b>↑、↓、Enter</b> 操作。进度保存在本浏览器中。</p>
+<div class="debug"><button id="skip-period">调试：下个时段</button><button id="skip-season">调试：下个季节</button><button id="fill-tank">调试：放满鱼缸</button></div>
+<button id="reset">清除本浏览器原型存档</button></div><script src="species.js"></script><script src="rules.js"></script><script src="game.js"></script></body></html>

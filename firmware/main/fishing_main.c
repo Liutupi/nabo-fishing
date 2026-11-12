@@ -16,7 +16,7 @@
 #include "nvs.h"
 
 #define TAG "NABO-Fishing"
-#define SAVE_KEY "progress_v2"
+#define SAVE_KEY "progress_v4"
 #define IDLE_US INT64_C(300000000)
 
 typedef struct { fish_button_t button; uint32_t ms; } input_t;
@@ -30,34 +30,33 @@ static uint32_t now_ms(void) { return esp_timer_get_time() / 1000; }
 
 static fish_save_t load_progress(void)
 {
-    uint32_t record[2 + FISH_SAVE_WORDS] = {0};
-    size_t size = sizeof record;
     nvs_handle_t handle;
     esp_err_t err = nvs_open("nabo_fish", NVS_READONLY, &handle);
     if (err == ESP_OK) {
-        err = nvs_get_blob(handle, SAVE_KEY, record, &size);
-        if (err == ESP_ERR_NVS_NOT_FOUND) {
-            size = sizeof record;
-            err = nvs_get_blob(handle, "progress_v1", record, &size);
-            if (err == ESP_OK && (size != 3 * sizeof(uint32_t) || record[2] > 63))
-                err = ESP_ERR_INVALID_SIZE;
-        } else if (err == ESP_OK && size != sizeof record) {
-            err = ESP_ERR_INVALID_SIZE;
+        static const char *const keys[] = {SAVE_KEY, "progress_v3", "progress_v2", "progress_v1"};
+        static const unsigned counts[] = {FISH_RECORD_WORDS, FISH_RECORD_WORDS_V3, 6, 3};
+        for (unsigned i = 0; i < sizeof keys / sizeof keys[0]; i++) {
+            uint32_t record[FISH_RECORD_WORDS];
+            size_t size = sizeof record;
+            err = nvs_get_blob(handle, keys[i], record, &size);
+            if (err == ESP_ERR_NVS_NOT_FOUND) continue;
+            fish_save_t save;
+            if (err == ESP_OK && size == counts[i] * sizeof(uint32_t) &&
+                fish_save_decode(&save, record, counts[i])) {
+                nvs_close(handle);
+                return save;
+            }
+            ESP_LOGW(TAG, "could not read %s", keys[i]);
         }
         nvs_close(handle);
-        if (err == ESP_OK && record[1] >= 1 && record[1] <= FISH_MAX_ROD && record[5] <= 15) {
-            return (fish_save_t){.coins = record[0], .rod = record[1],
-                .seen = {record[2], record[3], record[4], record[5]}};
-        }
     }
-    if (err != ESP_ERR_NVS_NOT_FOUND) ESP_LOGW(TAG, "save unavailable: %s", esp_err_to_name(err));
-    return (fish_save_t){.rod = 1};
+    return (fish_save_t){.rod = 1, .line = 1};
 }
 
 static void write_progress(int64_t now)
 {
-    const uint32_t record[] = {game.save.coins, game.save.rod,
-        game.save.seen[0], game.save.seen[1], game.save.seen[2], game.save.seen[3]};
+    uint32_t record[FISH_RECORD_WORDS];
+    fish_save_encode(&game.save, record);
     nvs_handle_t handle;
     esp_err_t err = nvs_open("nabo_fish", NVS_READWRITE, &handle);
     if (err == ESP_OK) {
@@ -102,8 +101,8 @@ static void show_welcome(void)
     input_t skip;
     while (xQueueReceive(inputs, &skip, 0) != pdTRUE) {
         unsigned elapsed = now_ms() - started;
-        if (elapsed >= 2750) break;
-        if (!spoke && elapsed >= 380) {
+        if (elapsed >= 3400) break;
+        if (!spoke && elapsed >= 640) {
             fishing_sound_play(SOUND_WELCOME);
             spoke = true;
         }
@@ -172,12 +171,12 @@ void app_main(void)
         while (xQueueReceive(inputs, &input, 0) == pdTRUE) {
             last_input = now;
             fish_page_t old_page = game.page;
-            uint8_t old_rod = game.save.rod;
+            uint8_t old_rod = game.save.rod, old_line = game.save.line;
             if (fish_press(&game, input.button, input.ms)) {
                 dirty = true;
                 retry_at = now;
             }
-            if (game.save.rod != old_rod) fishing_sound_play(SOUND_UPGRADE);
+            if (game.save.rod != old_rod || game.save.line != old_line) fishing_sound_play(SOUND_UPGRADE);
             announce_page(old_page);
         }
         fish_page_t old_page = game.page;

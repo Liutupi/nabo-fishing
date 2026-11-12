@@ -17,7 +17,7 @@ with wave.open(str(root / "art/boot-welcome.wav"), "rb") as f:
 loud = [i for i, sample in enumerate(samples) if abs(sample) > 250]
 assert loud and 8000 < loud[-1] - loud[0] < 64000
 samples = samples[max(0, loud[0] - 480):loud[-1] + 800]
-scale = 11500 / max(abs(sample) for sample in samples)
+scale = 20500 / max(abs(sample) for sample in samples)
 save("welcome", [int(sample * scale) for sample in samples])
 
 rng = random.Random(23)

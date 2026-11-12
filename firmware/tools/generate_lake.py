@@ -1,17 +1,8 @@
 from pathlib import Path
-import struct
 from PIL import Image, ImageChops, ImageOps
 
 root = Path(__file__).resolve().parents[2]
-out = root / "firmware/main"
 
-def rgb565(image):
-    return b"".join(struct.pack("<H", ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3))
-                    for r, g, b in image.convert("RGB").getdata())
-
-scene = ImageOps.fit(Image.open(root / "art/fishing-nabo.png"), (240, 160),
-                     Image.Resampling.LANCZOS)
-(out / "lake.rgb565").write_bytes(rgb565(scene))
 cards = []
 for sheet in range(1, 8):
     atlas = Image.open(root / f"art/fish-{sheet:02}.png").convert("RGB")
@@ -32,9 +23,6 @@ for sheet in range(1, 8):
             cards.append(card)
 
 assert len(cards) == 100
-packed = [rgb565(card) for card in cards]
-assert len(set(packed)) == 100
-(out / "fish.rgb565").write_bytes(b"".join(packed))
 preview = Image.new("RGB", (840, 600), "#10343b")
 for i, card in enumerate(cards):
     preview.paste(card, (i % 10 * 84, i // 10 * 60))

@@ -1,6 +1,8 @@
 (() => {
     'use strict';
-    const {species, create, press, tick, cursor, halfZone, cost, seen} = fishingRules;
+    const {species, baitNames, baitFor, create, press, tick, cursor, halfZone,
+        cost, gearLevel, seen, tankValue, pulling, seasonNames, periodNames,
+        periodOf, seasonOf, dayOf, seasonsFor, periodsFor, active} = fishingRules;
     const key = 'nabo-fishing-prototype-v1';
     const time = () => Math.floor(performance.now()) >>> 0;
     const seed = () => Math.floor(Math.random() * 0x100000000);
@@ -8,70 +10,273 @@
     try { save = JSON.parse(localStorage.getItem(key)); } catch (_) {}
     let game = create(save, seed());
     const $ = id => document.getElementById(id);
+    const font = (size, bold) => (bold ? 'bold ' : '') + size + "px 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif";
 
     function persist() {
         try { localStorage.setItem(key, JSON.stringify(game.save)); } catch (_) {}
     }
 
+    function habitat(id) {
+        const pick = (mask, names, all) => mask === 15 ? all :
+            names.filter((_, i) => mask >> i & 1).join('');
+        return pick(seasonsFor(id), seasonNames, '四季') + ' · ' + pick(periodsFor(id), ['晨', '昼', '昏', '夜'], '全天');
+    }
+
+    // ---- Shore weather: a few drifting specks per season, drawn over the backdrop.
+    const weather = $('weather').getContext('2d');
+    function drawWeather(now) {
+        const season = seasonOf(game.save.clock), night = periodOf(game.save.clock) === 3;
+        weather.clearRect(0, 0, 240, 160);
+        if (game.page >= 3 && game.page <= 7) return;
+        const t = now / 1000;
+        for (let i = 0; i < 12; i++) {
+            const a = i * 37.7 % 1, b = i * 0.618 % 1;
+            if (season === 1) {                       // summer: fireflies after dark
+                if (!night || i > 6) continue;
+                const x = 120 + 110 * Math.sin(t * (0.21 + a * 0.2) + i * 2.1);
+                const y = 96 + 34 * Math.sin(t * (0.33 + b * 0.2) + i);
+                weather.fillStyle = 'rgba(232,255,140,' + (0.45 + 0.45 * Math.sin(t * 3 + i * 1.7)) + ')';
+                weather.fillRect(Math.round(x), Math.round(y), 2, 2);
+                continue;
+            }
+            const fall = season === 3 ? 16 + b * 12 : 11 + b * 9;
+            const y = (b * 160 + t * fall + i * 29) % 168 - 4;
+            const drift = season === 3 ? 4 : 13;
+            const x = (a * 240 + i * 53 - t * drift + 7 * Math.sin(t * 1.4 + i)) % 240;
+            weather.fillStyle = season === 0 ? '#ffc2d6' : season === 2 ? (i % 2 ? '#e8892f' : '#c9502b') : '#ffffff';
+            const size = season === 3 ? 2 : 3;
+            weather.fillRect(Math.round((x + 240) % 240), Math.round(y), size, season === 3 ? 2 : 2);
+        }
+    }
+
+    // ---- Landscape aquarium, 320 × 240.
+    const tank = $('tank').getContext('2d');
+    const atlas = new Image();
+    atlas.src = '../art/fish-catalog-alpha.png';
+    const backdrop = new Image();              // painted by firmware/tools/generate_tank.py
+    backdrop.src = '../art/tank-backdrop.png';
+    const swimmers = [];
+    let fedAt = -1e9;
+    const sizes = [48, 56, 64, 72].map(width => width / 84);   // sprite widths on the badge
+
+    function swim(slot, pet, now, dt) {
+        let s = swimmers[slot];
+        if (!s || s.species !== pet.species) {
+            s = swimmers[slot] = {species: pet.species, x: 50 + slot * 44, y: 62 + slot * 53 % 100,
+                tx: 44 + Math.random() * 232, ty: 50 + Math.random() * 118,
+                speed: 14 + slot * 3, dir: 1, phase: slot * 1.3, pause: 0};
+        }
+        s.phase += dt * (5 + s.speed / 6);
+        if (s.pause > 0) { s.pause -= dt; return s; }
+        const dx = s.tx - s.x, dy = s.ty - s.y, distance = Math.hypot(dx, dy);
+        if (distance < 3) {
+            s.tx = 44 + Math.random() * 232;
+            s.ty = 50 + Math.random() * 110;
+            s.speed = 12 + Math.random() * 20;
+            s.pause = Math.random() < 0.35 ? 0.4 + Math.random() : 0;
+            return s;
+        }
+        if (Math.abs(dx) > 4) s.dir = dx > 0 ? 1 : -1;
+        s.x += dx / distance * s.speed * dt;
+        s.y += dy / distance * s.speed * dt * 0.6;
+        return s;
+    }
+
+    function drawFish(s, scale) {
+        const id = s.species - 1, sx = id % 10 * 84, sy = Math.floor(id / 10) * 60;
+        tank.save();
+        tank.translate(Math.round(s.x), Math.round(s.y));
+        tank.scale(s.dir * scale, scale);
+        for (let k = 0; k < 7; k++) {                // the art faces right; the tail strips wag most
+            const sway = Math.round(Math.sin(s.phase - k * 0.8) * 3 * ((6 - k) / 6) ** 2);
+            tank.drawImage(atlas, sx + k * 12, sy, 12, 60, -42 + k * 12, -30 + sway, 12.4, 60);
+        }
+        tank.restore();
+    }
+
+    function chip(x, y, w, text, color, align) {
+        tank.fillStyle = 'rgba(16,47,56,0.86)';
+        tank.beginPath(); tank.roundRect(x, y, w, 22, 7); tank.fill();
+        tank.fillStyle = color; tank.font = font(13); tank.textAlign = align || 'center';
+        tank.fillText(text, x + w / 2, y + 16);
+    }
+
+    let lastTank = 0;
+    function drawTank(now) {
+        const dt = Math.min(0.1, (now - lastTank) / 1000); lastTank = now;
+        const {save, page, slot} = game;
+        const t = now / 1000;
+        tank.imageSmoothingEnabled = false;
+        tank.drawImage(backdrop, 0, 0);
+        tank.fillStyle = 'rgba(205,255,240,0.55)';
+        for (let i = 0; i < 9; i++) {                // bubbles
+            const y = 186 - (t * (16 + i % 3 * 6) + i * 41) % 180;
+            tank.fillRect(Math.round([64, 70, 150, 236, 242, 60, 156, 230, 248][i] + 3 * Math.sin(t * 2 + i)), Math.round(y), 2 + i % 2, 2 + i % 2);
+        }
+        const order = save.tank.map((pet, i) => i).filter(i => save.tank[i].species)
+            .sort((a, b) => (a === slot) - (b === slot));
+        let chosen = null;
+        for (const i of order) {
+            const pet = save.tank[i], s = swim(i, pet, now, dt);
+            drawFish(s, sizes[pet.growth]);
+            if (i === slot) chosen = s;
+        }
+        if (chosen) {
+            const lift = 30 * sizes[save.tank[slot].growth] + 7 + Math.round(Math.sin(t * 5) * 2);
+            tank.fillStyle = '#ffc85e';
+            tank.beginPath(); tank.moveTo(chosen.x - 6, chosen.y - lift - 7); tank.lineTo(chosen.x + 6, chosen.y - lift - 7);
+            tank.lineTo(chosen.x, chosen.y - lift); tank.fill();
+            const fed = now - fedAt;
+            if (fed < 1100) {                        // feed pellets sink to the fish
+                tank.fillStyle = '#e7a14b';
+                for (let i = 0; i < 5; i++) {
+                    const p = Math.min(1, fed / (700 + i * 90));
+                    tank.fillRect(Math.round(chosen.x - 12 + i * 6), Math.round(6 + (chosen.y - 12) * p), 3, 3);
+                }
+            }
+        }
+        const count = save.tank.filter(pet => pet.species).length;
+        if (!count) {
+            tank.fillStyle = '#c9f1e6'; tank.font = font(14); tank.textAlign = 'center';
+            tank.fillText('鱼缸还空着，钓到鱼后按上键放进来', 160, 112);
+        }
+        chip(8, 8, 96, '我的鱼缸 ' + count + '/6', '#ffefd3');
+        chip(220, 8, 92, '贝壳 ' + save.coins, '#ffc85e');
+        for (let i = 0; i < 7; i++) {                // slot pips; the last one is the way out
+            tank.fillStyle = i === slot ? '#ffc85e' : i < 6 && save.tank[i].species ? '#68dbb9' : 'rgba(16,47,56,0.8)';
+            tank.beginPath(); tank.roundRect(118 + i * 13, 15, i === 6 ? 14 : 9, 8, 3); tank.fill();
+        }
+        let name, status = '', keys;
+        const pet = slot < 6 ? save.tank[slot] : null;
+        if (!pet) { name = '返回岸边'; keys = 'OK 返回   下 / 上 选鱼'; }
+        else if (!pet.species) { name = '空位 ' + (slot + 1); status = '已养 ' + count + '/6'; keys = '下 后一格   上 前一格'; }
+        else {
+            name = species[pet.species - 1].name;
+            status = '成长 ' + pet.growth + '/3 · ' + (pet.fed ? '已喂' : '待喂食');
+            keys = 'OK 照料   下 后一条   上 前一条';
+            if (page === 11) {
+                status = game.notice === 5 ? '贝壳不足' : pet.growth === 3 ? '已经长大了' :
+                    pet.fed ? '已喂，钓到鱼会成长' : '喂食 2 贝壳，钓鱼后成长';
+                keys = 'OK 喂食   下 出售   上 返回';
+            } else if (page === 12) {
+                status = '确认出售 · ' + tankValue(pet) + ' 贝壳';
+                keys = 'OK 出售   上 取消';
+            }
+        }
+        tank.fillStyle = 'rgba(16,47,56,0.88)';
+        tank.beginPath(); tank.roundRect(8, 184, 304, 50, 10); tank.fill();
+        tank.textAlign = 'left'; tank.fillStyle = page === 12 ? '#ff9a7a' : '#ffefd3'; tank.font = font(15, true);
+        tank.font = font(18, true);
+        tank.fillText(name, 18, 206);
+        tank.textAlign = 'right'; tank.fillStyle = '#a6c3bc'; tank.font = font(12);
+        tank.fillText(status, 302, 204);
+        tank.textAlign = 'left'; tank.fillStyle = '#ffc85e';
+        tank.fillText(keys, 18, 226);
+    }
+
     function render(now) {
         const {save, page} = game;
+        const aquarium = page >= 10;
+        $('device').classList.toggle('landscape', aquarium);
         $('screen').dataset.page = page;
+        if (aquarium) { drawTank(now); return; }
+        const season = seasonOf(save.clock), period = periodOf(save.clock);
+        $('screen').style.setProperty('--shore', "url('../art/shore/shore-" + season + period + ".png')");
+        $('clock').textContent = seasonNames[season] + ' · ' + periodNames[period];
+        const tankCount = save.tank.filter(slot => slot.species).length;
+        const aiming = page === 8 || page === 2;
+        const fighting = page === 9;
         $('coins').textContent = '贝壳 ' + save.coins;
-        $('meter').hidden = page !== 2;
-        $('line').hidden = $('float').hidden = page !== 1 && page !== 2;
+        $('meter').hidden = !aiming && !fighting;
+        $('meter').classList.toggle('danger', fighting);
+        $('zone').style.left = (fighting ? 72 : 50 - halfZone(game)) + '%';
+        $('zone').style.width = (fighting ? 28 : 2 * halfZone(game)) + '%';
+        $('cursor').style.left = (fighting ? game.tension : cursor(game, now) / 13) + '%';
+        $('progress').hidden = !fighting;
+        $('progress').firstElementChild.style.width = (fighting ? 100 * game.landed / game.required : 0) + '%';
+        $('line').hidden = $('float').hidden = page !== 1 && page !== 2 && !fighting;
+        const bookId = game.group * 10 + game.book;
         const id = page === 3 && game.result === 0 ? game.caught :
-            page === 6 && seen(game, game.group * 10 + game.book) ? game.group * 10 + game.book : -1;
+            page === 6 && seen(game, bookId) ? bookId : -1;
         $('fish-art').hidden = id < 0;
         if (id >= 0) $('fish-art').style.backgroundPosition =
             -(id % 10) * 84 + 'px ' + -Math.floor(id / 10) * 60 + 'px';
-        let title, hint, items;
+        let title = '', hint = '', items = [];
         switch (page) {
             case 0:
-                title = '今天也来钓鱼吧';
-                hint = '鱼竿 Lv.' + save.rod + '　图鉴 ' +
-                    species.filter((_, i) => seen(game, i)).length + '/' + species.length;
-                items = ['去钓鱼', '工坊', '图鉴'];
+                title = 'NABO 钓鱼小岛';
+                hint = '图鉴 ' + species.filter((_, i) => seen(game, i)).length + '/100 · 出没 ' +
+                    species.filter((fish, i) => fish.level <= save.rod && active(i, save.clock)).length + ' 种';
+                items = ['钓鱼', '工坊', '图鉴', '鱼缸'];
+                break;
+            case 7:
+                title = '钓前准备';
+                if (game.prep < 4) {
+                    hint = baitNames[game.prep] + (game.chum ? ' · 已选打窝' : '');
+                    items = ['↑↓ 选饵', 'OK 装饵'];
+                } else if (game.prep === 4) {
+                    hint = game.notice === 5 ? '贝壳不足' :
+                        game.chum ? '打窝已选，抛竿时扣费' : '打窝花 3 贝壳，等口更快';
+                    items = ['↑↓ 选择', 'OK 切换'];
+                } else if (game.prep === 5) {
+                    hint = '等到' + periodNames[(period + 1) % 4] + '再钓';
+                    items = ['↑↓ 选择', 'OK 歇一会'];
+                } else {
+                    hint = '返回岸边';
+                    items = ['↑↓ 选择', 'OK 返回'];
+                }
+                break;
+            case 8:
+                title = '瞄准抛竿';
+                hint = '指针进金区，优先好鱼';
+                items = ['↑ 换饵', 'OK 抛竿'];
                 break;
             case 1:
                 title = '等鱼上钩';
-                hint = '看浮漂，鱼儿正在靠近';
+                hint = baitNames[game.bait] + (game.chummed ? ' · 已打窝' : ' · 看浮漂');
                 items = ['↑ 返回岸边'];
                 break;
             case 2:
-                $('zone').style.left = (50 - halfZone(game)) + '%';
-                $('zone').style.width = (2 * halfZone(game)) + '%';
-                $('cursor').style.left = (cursor(game, now) / 13) + '%';
                 title = '鱼咬钩了';
-                hint = '指针进金色区时按 OK 收竿';
-                items = ['↑ 返回岸边'];
+                hint = '指针进金区时刺鱼';
+                items = ['↑ 返回', 'OK 刺鱼'];
                 break;
-            case 3: {
-                title = '钓鱼日记';
-                const fish = species[game.caught];
-                hint = ['钓到 ' + fish.name + '！自动出售，获得 ' + fish.value + ' 贝壳。',
-                    '差一点，鱼儿逃走了', '鱼儿游走了'][game.result];
-                items = ['OK 再钓一次', '↑ 返回岸边'];
+            case 9:
+                title = '遛鱼收线';
+                hint = pulling(game, now) ? '鱼在挣扎，先放线' : '鱼缓下来了，快收线';
+                items = ['↑ 退出', '↓ 放线', 'OK 收线'];
                 break;
-            }
+            case 3:
+                if (game.result === 0) {
+                    const fish = species[game.caught];
+                    title = fish.name;
+                    hint = save.pending ? '出售 ' + fish.value + ' 贝壳 · 鱼缸 ' + tankCount + '/6' :
+                        game.notice === 2 ? '已放进鱼缸' : '已出售';
+                    if (game.notice === 1) hint = '鱼缸满了，可以出售';
+                    items = save.pending ? ['↑ 放进鱼缸', '↓ 出售'] : ['↑ 回岸', 'OK 再钓'];
+                } else {
+                    title = ['', '差一点', '鱼儿游走了', '鱼线断了'][game.result];
+                    hint = '再抛一竿试试';
+                    items = ['↑ 回岸', 'OK 再钓'];
+                }
+                break;
             case 4:
-                title = '鱼竿工坊';
-                hint = save.rod === 4 ? '鱼竿已满级' : game.poor ? '贝壳不足，先去钓鱼吧' :
-                    '升级到 Lv.' + (save.rod + 1) + ' 需要 ' + cost(game) + ' 贝壳';
-                items = save.rod === 4 ? ['↑ 返回岸边'] : ['OK 升级鱼竿', '↑ 返回岸边'];
+                title = game.gear ? '升级鱼线' : '升级鱼竿';
+                hint = gearLevel(game) === 4 ? '已满级' : game.notice === 5 ? '贝壳不足' :
+                    'Lv.' + gearLevel(game) + ' · ' + cost(game) + ' 贝壳';
+                items = ['↑ 返回', '↓ 换装备', 'OK 升级'];
                 break;
             case 5:
                 title = '鱼类图鉴';
                 hint = game.group === 10 ? '返回岸边' : '第 ' + (game.group + 1) + ' 册';
-                items = ['↑ / ↓ 选册', 'OK 确认'];
+                items = ['↑↓ 选册', 'OK 确认'];
                 break;
-            case 6: {
-                const id = game.group * 10 + game.book;
-                const fish = species[id];
-                title = seen(game, id) ? fish.name : '未知鱼种';
-                hint = '编号 ' + (id + 1) + '　鱼竿 Lv.' + fish.level;
-                items = ['↑ / ↓ 翻鱼', 'OK 返回目录'];
+            case 6:
+                title = seen(game, bookId) ? species[bookId].name : '未知鱼种';
+                hint = seen(game, bookId) ? baitNames[baitFor(bookId)] + ' · ' + habitat(bookId) :
+                    '竿 Lv.' + species[bookId].level + ' · 习性未知';
+                items = ['↑↓ 翻鱼', 'OK 返回目录'];
                 break;
-            }
         }
         $('title').textContent = title;
         $('hint').textContent = hint;
@@ -82,6 +287,7 @@
     function act(button) {
         const now = time();
         if (press(game, button, now)) persist();
+        if (game.notice === 4) fedAt = now;
         render(now);
     }
     ['up', 'down', 'ok'].forEach((id, i) => $(id).addEventListener('click', () => act(i)));
@@ -91,6 +297,16 @@
         event.preventDefault();
         act(button);
     });
+    function debug(id, change) {
+        $(id).addEventListener('click', () => { change(game.save); persist(); render(time()); });
+    }
+    debug('skip-period', s => { s.clock = (Math.floor(s.clock / 3) + 1) * 3 % 144; });
+    debug('skip-season', s => { s.clock = (s.clock + 36) % 144; });
+    debug('fill-tank', s => s.tank.forEach(pet => {
+        if (pet.species) return;
+        pet.species = 1 + Math.floor(Math.random() * 100);
+        pet.growth = Math.floor(Math.random() * 4);
+    }));
     $('reset').addEventListener('click', () => {
         if (!confirm('确定清除本浏览器中的原型进度？')) return;
         game = create(null, seed());
@@ -101,7 +317,11 @@
         const now = time();
         const previous = game.page;
         tick(game, now);
-        if (previous !== game.page || game.page === 2) render(now);
+        if (game.page >= 10) drawTank(now);
+        else {
+            if (previous !== game.page || [2, 8, 9].includes(game.page)) render(now);
+            drawWeather(now);
+        }
         requestAnimationFrame(frame);
     }
     render(time());

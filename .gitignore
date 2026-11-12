@@ -5,3 +5,4 @@ firmware/sdkconfig*
 __pycache__/
 build.log
 build-v020.log
+firmware/build-motion.log

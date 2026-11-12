@@ -34,42 +34,63 @@ static void audio_task(void *arg)
     (void)arg;
     fishing_sound_t current = SOUND_STOP;
     const int16_t *cursor = NULL, *end = NULL;
+    unsigned submitted = 0;
     for (;;) {
         fishing_sound_t next;
-        if (xQueueReceive(requests, &next, current == SOUND_STOP ? portMAX_DELAY : 0) == pdTRUE) {
+        if (xQueueReceive(requests, &next, 0) == pdTRUE) {
+            if (current == SOUND_WELCOME && next == SOUND_STOP)
+                ESP_LOGI("NABO-Sound", "welcome skipped after %u samples", submitted);
             current = next;
             cursor = clips[next].start;
             end = clips[next].end;
+            submitted = 0;
+        }
+
+        // Match the badge's tested continuous DMA feed. The codec may apply
+        // volume in place, including when the buffer contains only silence.
+        int16_t buffer[320] = {0};
+        unsigned samples = 0;
+        if (current != SOUND_STOP) {
+            samples = end - cursor;
+            if (samples > 320) samples = 320;
+            for (unsigned i = 0; i < samples; i++) buffer[i] = cursor[i];
         }
         xSemaphoreTake(codec_lock, portMAX_DELAY);
-        if (current == SOUND_STOP || cursor == end) {
-            // Clear the tail of the DMA stream when skipping or ending a clip.
-            static const int16_t silence[320] = {0};
-            bsp_audio_write(silence, sizeof silence);
-            current = SOUND_STOP;
-        } else {
-            int16_t buffer[320] = {0};
-            size_t samples = end - cursor;
-            if (samples > 320) samples = 320;
-            for (size_t i = 0; i < samples; i++) buffer[i] = cursor[i];
-            if (bsp_audio_write(buffer, sizeof buffer) != ESP_OK) current = SOUND_STOP;
-            cursor += samples;
-        }
+        esp_err_t result = bsp_audio_write(buffer, sizeof buffer);
         xSemaphoreGive(codec_lock);
+        if (result != ESP_OK) {
+            ESP_LOGE("NABO-Sound", "audio write failed: %s (cue %d, sent %u)",
+                     esp_err_to_name(result), current, submitted);
+            current = SOUND_STOP;
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            continue;
+        }
+        if (current != SOUND_STOP) {
+            cursor += samples;
+            submitted += samples;
+            if (cursor == end) {
+                if (current == SOUND_WELCOME)
+                    ESP_LOGI("NABO-Sound", "welcome sent to codec: %u samples", submitted);
+                current = SOUND_STOP;
+            }
+        }
     }
 }
 
 bool fishing_sound_init(void)
 {
     nvs_handle_t settings;
-    int32_t volume = 55;
+    int32_t volume = 82;
     uint8_t speaker = 1;
     if (nvs_open("nabo_ui", NVS_READONLY, &settings) == ESP_OK) {
         nvs_get_i32(settings, "volume", &volume);
         nvs_get_u8(settings, "speaker", &speaker);
         nvs_close(settings);
     }
-    if (!speaker || volume <= 0) return true;
+    if (!speaker || volume <= 0) {
+        ESP_LOGI("NABO-Sound", "saved speaker is muted");
+        return true;
+    }
     if (volume > 100) volume = 100;
     requests = xQueueCreate(1, sizeof(fishing_sound_t));
     codec_lock = xSemaphoreCreateMutex();
@@ -77,6 +98,7 @@ bool fishing_sound_init(void)
     codec_initialized = bsp_audio_init() == ESP_OK;
     if (!codec_initialized || bsp_audio_set_format(16000, 16, 1) != ESP_OK) return false;
     bsp_audio_set_volume((uint8_t)volume);
+    ESP_LOGI("NABO-Sound", "speaker enabled, volume %ld", (long)volume);
     ready = xTaskCreate(audio_task, "fish_audio", 4096, NULL, 4, NULL) == pdPASS;
     return ready;
 }

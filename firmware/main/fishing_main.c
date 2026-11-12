@@ -17,13 +17,19 @@
 
 #define TAG "NABO-Fishing"
 #define SAVE_KEY "progress_v4"
-#define IDLE_US INT64_C(300000000)
+// Idle handling has two steps. After STANDBY_US the backlight goes dark but the
+// game keeps running, so any key brings the screen back at once. Only after
+// SLEEP_US does the badge enter deep sleep, which needs a firm key press and a
+// reboot to leave. The aquarium is an ornament: it never dims or sleeps.
+#define STANDBY_US INT64_C(120000000)
+#define SLEEP_US INT64_C(1500000000)
+#define BACKLIGHT 80
 
 typedef struct { fish_button_t button; uint32_t ms; } input_t;
 static QueueHandle_t inputs;
 static atomic_bool overflow;
 static fish_game_t game;
-static bool dirty, save_error;
+static bool dirty, save_error, standby;
 static int64_t last_input, retry_at;
 
 static uint32_t now_ms(void) { return esp_timer_get_time() / 1000; }
@@ -150,7 +156,7 @@ void app_main(void)
     bool wait_release = (esp_sleep_get_wakeup_causes() & (1u << ESP_SLEEP_WAKEUP_GPIO)) != 0;
     if (!wait_release) fishing_ui_boot(0, true);
     bsp_lvgl_unlock();
-    bsp_display_backlight(80);
+    bsp_display_backlight(BACKLIGHT);
     ESP_ERROR_CHECK(bsp_button_init(button_event, NULL));
     if (!fishing_sound_init()) ESP_LOGW(TAG, "sound unavailable");
     if (!wait_release) show_welcome();
@@ -170,6 +176,11 @@ void app_main(void)
         }
         while (xQueueReceive(inputs, &input, 0) == pdTRUE) {
             last_input = now;
+            if (standby) {                      // this press only wakes the screen
+                standby = false;
+                bsp_display_backlight(BACKLIGHT);
+                continue;
+            }
             fish_page_t old_page = game.page;
             uint8_t old_rod = game.save.rod, old_line = game.save.line;
             if (fish_press(&game, input.button, input.ms)) {
@@ -183,11 +194,16 @@ void app_main(void)
         fish_tick(&game, now_ms());
         announce_page(old_page);
         if (dirty && now >= retry_at) write_progress(now);
-        if (bsp_lvgl_lock(10)) {
+        if (game.page == FISH_TANK || game.page == FISH_CARE || game.page == FISH_SELL) last_input = now;
+        if (!standby && now - last_input >= STANDBY_US) {
+            standby = true;
+            bsp_display_backlight(0);
+        }
+        if (!standby && bsp_lvgl_lock(10)) {
             fishing_ui_draw(&game, now_ms(), save_error);
             bsp_lvgl_unlock();
         }
-        if (!dirty && now - last_input >= IDLE_US) sleep_now();
-        vTaskDelay(pdMS_TO_TICKS(16));
+        if (!dirty && now - last_input >= SLEEP_US) sleep_now();
+        vTaskDelay(pdMS_TO_TICKS(standby ? 40 : 16));
     }
 }

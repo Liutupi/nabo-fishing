@@ -3,6 +3,7 @@
 #include "lvgl.h"
 #include "fishing_ui.h"
 #include "fishing_motion.h"
+#include "fishing_feedback.h"
 #include "fishing_intro.h"
 #include "fishing_tank.h"
 
@@ -10,8 +11,8 @@ LV_FONT_DECLARE(fishing_font_14);
 LV_FONT_DECLARE(fishing_font_20);
 #define CARD_W 84
 #define CARD_H 60
-#define LAND_MS 660
-#define MISS_MS 420
+_Static_assert(NABO_IDLE == FISH_POSE_IDLE && NABO_WINDUP == FISH_POSE_WINDUP &&
+               NABO_CAST == FISH_POSE_CAST && NABO_HOOK == FISH_POSE_HOOK, "pose ids");
 // The aquarium is landscape: the badge is turned a quarter clockwise so its keys
 // run along the bottom. Use LV_DISPLAY_ROTATION_270 if the picture is upside down.
 #define TANK_ROTATION LV_DISPLAY_ROTATION_90
@@ -25,6 +26,7 @@ static lv_obj_t *meter, *zone, *marker, *bobber, *ripple, *line, *rod, *drops[4]
 static lv_point_precise_t rod_points[3], line_points[3];
 static uint32_t page_started;
 static int illustrated_species = -1;
+static fish_fx_state_t fx;
 static const uint32_t ink = 0x102f38, paper = 0xffefd3;
 static const uint32_t muted = 0xa6c3bc, gold = 0xffc85e, panel = 0x194451;
 
@@ -53,8 +55,16 @@ static lv_obj_t *label(lv_obj_t *parent, int x, int y, int w, uint32_t rgb, cons
     return object;
 }
 
+void fishing_ui_reset(void) { fish_fx_clear(&fx); }
+
+void fishing_ui_press(fish_button_t button, fish_page_t before, const fish_game_t *game, uint32_t now)
+{
+    fish_fx_press(&fx, button, before, game->page, game->result, now);
+}
+
 void fishing_ui_init(void)
 {
+    fishing_ui_reset();
     lv_obj_t *screen = lv_screen_active();
     lv_obj_remove_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_bg_color(screen, lv_color_hex(ink), 0);
@@ -184,6 +194,18 @@ static void drift(const fish_game_t *game, uint32_t now, bool show)
     }
 }
 
+static void pose_from(const fish_pose_view_t *view, nabo_pose_t *pose, int *tip_x, int *tip_y,
+                      int *bob_x, int *bob_y, int *sag, int *ripple_w)
+{
+    *pose = (nabo_pose_t)view->pose;
+    *tip_x = view->tip_x;
+    *tip_y = view->tip_y;
+    *bob_x = view->bob_x;
+    *bob_y = view->bob_y;
+    *sag = view->sag;
+    *ripple_w = view->ripple;
+}
+
 static void animate(const fish_game_t *game, uint32_t now)
 {
     if (game->page == FISH_TANK || game->page == FISH_CARE || game->page == FISH_SELL) {
@@ -197,34 +219,38 @@ static void animate(const fish_game_t *game, uint32_t now)
     bool fighting = game->page == FISH_FIGHT;
     bool aiming = game->page == FISH_CAST;
     bool success = game->page == FISH_RESULT && game->result == FISH_CAUGHT;
-    bool landing = game->page == FISH_RESULT && age < (success ? LAND_MS : MISS_MS);
+    bool landing = game->page == FISH_RESULT && age < (unsigned)fish_landing_ms(game->result);
+    bool snapped = landing && game->result == FISH_SNAPPED;
+    bool missed = landing && game->result == FISH_MISSED;
     bool lake_visible = game->page == FISH_HOME || waiting || biting || fighting || aiming || landing;
     bool swim = illustrated_species >= 0 && !landing;
-    visible(scene, lake_visible);
-    visible(actor, lake_visible);
-    visible(rod, lake_visible);
-    visible(line, waiting || biting || fighting || landing);
-    visible(bobber, waiting || biting || fighting);
-    visible(ripple, waiting || biting || fighting || landing);
-    visible(hero, !lake_visible);
-    visible(fish_image, swim);
-    visible(leaping_fish, landing && success);
-    drift(game, now, lake_visible);
+    // Petals and snow keep moving on the menu, and freeze while the float is the cue.
+    bool freeze_sky = biting || fighting || landing;
+    static uint32_t drift_clock;
+    static int specks_on;
+    if (!freeze_sky) drift_clock = now;
+    if (lake_visible) {
+        if (!freeze_sky || !specks_on) {
+            drift(game, drift_clock, true);
+            specks_on = 1;
+        }
+    } else if (specks_on) {
+        drift(game, drift_clock, false);
+        specks_on = 0;
+    }
 
     nabo_pose_t pose = NABO_IDLE;
-    int bob_y = 114, bob_x = 181;
-    int tip_x = 173, tip_y = 46;
+    int bob_y = 114, bob_x = 181, tip_x = 173, tip_y = 46, sag = 0, ripple_w = 0;
+    int hide_line = snapped, hide_bobber = snapped;
     if (aiming) {
         pose = NABO_WINDUP;
         tip_x = 141; tip_y = 32;
     } else if (fighting) {
-        bool pulling = fish_pulling(game, now);
-        pose = pulling ? NABO_HOOK : NABO_WINDUP;
-        tip_x = pulling ? 147 : 158;
-        tip_y = pulling ? 38 + (int)(age / 70 % 4) : 42;
-        bob_x = 181 - 4 * game->landed;
-        bob_y += pulling ? (int)(age / 95 % 2) * 7 : 0;
+        fish_pose_view_t view;
+        fish_fight_view(&fx, fish_pulling(game, now), game->landed, now, &view);
+        pose_from(&view, &pose, &tip_x, &tip_y, &bob_x, &bob_y, &sag, &ripple_w);
         static int previous_pull = -1;
+        int pulling = fish_pulling(game, now);
         const char *state = pulling ? "鱼在挣扎，先放线" : "鱼缓下来了，快收线";
         if (previous_pull != pulling || strcmp(lv_label_get_text(subtitle), state) != 0)
             lv_label_set_text(subtitle, state);
@@ -245,25 +271,41 @@ static void animate(const fish_game_t *game, uint32_t now)
             bob_y = 60 + (int)(54 * t / 250) - arc_height(t, 250, 30);
         }
     } else if (waiting) {
-        bob_y += now / 200 % 2;
+        bob_y += fish_wait_bob(now);
     } else if (biting) {
-        pose = age < 190 || (age / 240 % 3) != 2 ? NABO_WINDUP : NABO_IDLE;
-        tip_x = 155 + (int)(age / 65 % 3) * 3;
-        tip_y = 44 + (int)(age / 75 % 3) * 3;
-        bob_y += (int)(age / 85 % 2) * 8;
-    } else if (landing) {
-        pose = success ? NABO_HOOK : NABO_WINDUP;
+        fish_pose_view_t view;
+        fish_bite_view(age, &view);
+        pose_from(&view, &pose, &tip_x, &tip_y, &bob_x, &bob_y, &sag, &ripple_w);
+    } else if (landing && success) {
+        pose = NABO_HOOK;
         tip_x = 150 - (int)age / 20;
         tip_y = 24 + (int)age / 58;
-        if (success) {
-            bob_x = 181 - (int)(age * 42 / LAND_MS);
-            bob_y = 119 - arc_height(age, LAND_MS, 40) - (int)age / 27;
-            draw_fish(leaping_fish, game->caught, age / 30);
-            lv_obj_set_pos(leaping_fish, bob_x - CARD_W / 2, bob_y - CARD_H / 2);
-        } else {
-            bob_y -= (int)age / 7;
-            bob_x -= (int)age / 14;
-        }
+        bob_x = 181 - (int)(age * 42 / FISH_FX_LAND_MS);
+        bob_y = 119 - arc_height(age, FISH_FX_LAND_MS, 40) - (int)age / 27;
+        hide_bobber = 1;
+    } else if (landing) {
+        fish_pose_view_t view;
+        fish_fail_view(game->result, age, &view);
+        pose_from(&view, &pose, &tip_x, &tip_y, &bob_x, &bob_y, &sag, &ripple_w);
+        hide_line = view.hide_line;
+        hide_bobber = view.hide_bobber;
+    }
+
+    bool show_line = (waiting || biting || fighting || landing) && !hide_line;
+    bool show_bobber = (waiting || biting || fighting || (landing && !success)) && !hide_bobber;
+    bool show_ripple = (waiting || biting || fighting || landing) && ripple_w >= 0 && !snapped;
+    visible(scene, lake_visible);
+    visible(actor, lake_visible);
+    visible(rod, lake_visible);
+    visible(line, show_line);
+    visible(bobber, show_bobber);
+    visible(ripple, show_ripple);
+    visible(hero, !lake_visible);
+    visible(fish_image, swim);
+    visible(leaping_fish, landing && success);
+    if (landing && success) {
+        draw_fish(leaping_fish, game->caught, age / 30);
+        lv_obj_set_pos(leaping_fish, bob_x - CARD_W / 2, bob_y - CARD_H / 2);
     }
 
     if (aiming || biting) {
@@ -287,19 +329,24 @@ static void animate(const fish_game_t *game, uint32_t now)
         lv_point_precise_t tip = {tip_x, tip_y};
         polyline(rod, rod_points, grip,
                  (lv_point_precise_t){(grip.x + tip.x) / 2, (grip.y + tip.y) / 2 - 8}, tip);
-        if (waiting || biting || fighting || landing) {
-            polyline(line, line_points, tip,
-                     (lv_point_precise_t){(tip_x + bob_x) / 2 + 3, (tip_y + bob_y) / 2},
-                     (lv_point_precise_t){bob_x, bob_y});
-            lv_obj_set_pos(bobber, bob_x - 3, bob_y);
-            unsigned width = 16 + (biting || fighting || landing ? age / 19 % 17 : age / 50 % 8);
-            lv_obj_set_pos(ripple, bob_x - (int)width / 2, 124);
-            lv_obj_set_width(ripple, width);
+        if (show_line || show_bobber) {
+            if (show_line) {
+                polyline(line, line_points, tip,
+                         (lv_point_precise_t){(tip_x + bob_x) / 2 + 3, (tip_y + bob_y) / 2 + sag},
+                         (lv_point_precise_t){bob_x, bob_y});
+            }
+            if (show_bobber) lv_obj_set_pos(bobber, bob_x - 3, bob_y);
+            if (show_ripple) {
+                unsigned width = ripple_w > 0 ? (unsigned)ripple_w
+                                            : 16 + (biting || fighting || landing ? age / 19 % 17 : age / 50 % 8);
+                lv_obj_set_pos(ripple, bob_x - (int)width / 2, 124);
+                lv_obj_set_width(ripple, width);
+            }
         }
     }
 
     unsigned splash_ms = waiting ? cast_age - 350u : age;
-    bool splash = (waiting || biting || landing) && splash_ms < 220;
+    bool splash = (waiting || biting || (landing && (success || missed))) && splash_ms < 220;
     for (unsigned i = 0; i < 4; i++) {
         visible(drops[i], splash);
         if (splash) {
@@ -311,10 +358,10 @@ static void animate(const fish_game_t *game, uint32_t now)
     if (swim) {
         unsigned phase = age / 44;
         draw_fish(fish_image, illustrated_species, phase);
-        unsigned drift = phase % 24;
-        if (drift > 12) drift = 24 - drift;
-        lv_obj_set_pos(fish_image, (168 - CARD_W) / 2 + (int)drift - 6,
-                       (84 - CARD_H) / 2 + (int)(drift / 3) - 2);
+        unsigned sway = phase % 24;
+        if (sway > 12) sway = 24 - sway;
+        lv_obj_set_pos(fish_image, (168 - CARD_W) / 2 + (int)sway - 6,
+                       (84 - CARD_H) / 2 + (int)(sway / 3) - 2);
     }
 }
 

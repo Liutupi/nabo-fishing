@@ -25,6 +25,14 @@ static void frame(FILE *output, lv_display_t *display)
     if (fwrite(screen, sizeof screen, 1, output) != 1) abort();
 }
 
+static bool press(fish_game_t *game, fish_button_t button, uint32_t now)
+{
+    fish_page_t before = game->page;
+    bool changed = fish_press(game, button, now);
+    fishing_ui_press(button, before, game, now);
+    return changed;
+}
+
 static void verify_fish(void)
 {
     uint8_t base[FRAME_BYTES];
@@ -66,28 +74,28 @@ int main(int argc, char **argv)
     }
     fishing_ui_boot(0, false);
     fishing_ui_draw(&game, 3400, false);
-    fish_press(&game, FISH_OK, 3440);
+    press(&game, FISH_OK, 3440);
     for (unsigned t = 3440; t < 4000; t += 40) {
         fishing_ui_draw(&game, t, false);
         frame(output, display);
     }
-    fish_press(&game, FISH_OK, 4000);
+    press(&game, FISH_OK, 4000);
     for (unsigned t = 4000; t < 4650; t += 40) {
         fishing_ui_draw(&game, t, false);
         frame(output, display);
     }
-    fish_press(&game, FISH_OK, 4650);
+    press(&game, FISH_OK, 4650);
     unsigned end = game.bite_at + 640;
     for (unsigned t = 4650; t <= end; t += 40) {
         fish_tick(&game, t);
         fishing_ui_draw(&game, t, false);
         frame(output, display);
     }
-    assert(!fish_press(&game, FISH_OK, end) && game.page == FISH_FIGHT);
+    assert(!press(&game, FISH_OK, end) && game.page == FISH_FIGHT);
     while (game.page == FISH_FIGHT) {
         end += 320;
-        if (fish_pulling(&game, end) || game.tension > 42) fish_press(&game, FISH_DOWN, end);
-        else fish_press(&game, FISH_OK, end);
+        if (fish_pulling(&game, end) || game.tension > 42) press(&game, FISH_DOWN, end);
+        else press(&game, FISH_OK, end);
         for (unsigned t = end; t < end + 320; t += 40) {
             fishing_ui_draw(&game, t, false);
             frame(output, display);
@@ -100,7 +108,7 @@ int main(int argc, char **argv)
         frame(output, display);
     }
     end += 1280;
-    assert(fish_press(&game, FISH_UP, end));
+    assert(press(&game, FISH_UP, end));
     printf("All %u fish have an opaque body, transparent background and distinct swim frames.\n", FISH_COUNT);
     if (fclose(output)) return 1;
     return 0;

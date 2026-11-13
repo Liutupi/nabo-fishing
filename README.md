@@ -20,11 +20,13 @@ v0.2.0 重绘了 240×320 界面、NABO 钓鱼服和湖畔场景。100 种鱼均
 
 Windows 使用 `./build.ps1`，以 ESP-IDF 6.0.2 和 LVGL 9.5.0 构建。合并镜像位于 `firmware/build-idf6/nabo-fishing-merged.bin`。已有进度的工牌应先识别实际分区并备份，再评估应用分区升级。全量镜像从 `0x0` 安装会覆盖 NVS 所在区域。
 
-运行 `node tests/test_rules.js` 可对拍生产 C 和浏览器规则。测试需要宿主 C 编译器，可用环境变量 `CC` 指定。对拍覆盖不同鱼饵、打窝、断线、钓齐 100 种鱼、装备、喂食和旧存档读取。硬件按键、画面、语音、休眠及断电恢复待真机验收。
+画面反馈不改判定时间、张力、进度和存档。等口时浮漂缓慢起伏约 3 像素。咬钩先顿两下，人停在蓄力姿势，之后看金区指针。刺中和刺空的头 150 毫秒是提竿。遛鱼时 OK 立刻收竿收线，下键立刻送竿放线；鱼自己的挣扎只留很小的竿尖和浮漂偏移。刺空是浮漂离水，超时是线变松、浮漂下沉，断线是线消失、竿弹回。咬钩、遛鱼和结算短动画里，花瓣、落叶、雪和萤火停住。浏览器原型的岸边人画在背景图上，没有这四套姿势，不能当作固件画面。
+
+运行 `node tests/test_rules.js` 可对拍生产 C 和浏览器规则，并跑画面反馈的寿命测试。测试需要宿主 C 编译器，可用环境变量 `CC` 指定。对拍覆盖不同鱼饵、打窝、断线、钓齐 100 种鱼、装备、喂食和旧存档读取。硬件按键、画面、语音、休眠及断电恢复待真机验收，上面的动作没有在 ESP32-C3 上测过帧率或手感。
 
 动作素材由 `python firmware/tools/generate_motion.py` 打包。之后依次运行 `generate_night_actor.py`（月光下的 NABO）、`generate_shore.py`（16 张岸边背景）和 `generate_tank.py`（鱼缸背景）。先执行固件构建获取 LVGL 依赖，再用本机 CMake 和 C 编译器构建 `tests/render_motion`。运行 `render_motion <输出文件>` 可导出 240×320 的 RGB565 动画帧，并检查 100 种鱼在摆尾时的像素覆盖。
 
-同一目录还会构建 `render_scenes`。运行 `render_scenes <输出目录>` 后用 `python tests/render_motion/scenes.py <输出目录> <图片.png>` 拼出各季节岸边、图鉴和横版鱼缸的画面，用的是固件自己的界面代码。
+同一目录还会构建 `render_scenes` 和 `render_feedback`。运行 `render_scenes <输出目录>` 后用 `python tests/render_motion/scenes.py <输出目录> <图片.png>` 拼出各季节岸边、图鉴和横版鱼缸的画面，用的是固件自己的界面代码。`render_feedback <输出目录>` 用同一套界面代码导出 240×320 的等口、咬钩、刺鱼、收线、放线和三种失败帧，并检查这些帧彼此不一样。
 
 横屏方向由 `firmware/main/fishing_ui.c` 的 `TANK_ROTATION` 决定。真机上如果鱼缸画面上下颠倒，把它改成 `LV_DISPLAY_ROTATION_270` 重新构建。
 

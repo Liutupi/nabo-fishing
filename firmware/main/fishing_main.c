@@ -176,6 +176,8 @@ void app_main(void)
                 dirty = true;
                 retry_at = now;
             }
+            // old_page is pre-tick. A bite that lands on this press still counts.
+            fishing_ui_press(input.button, old_page, &game, input.ms);
             if (game.save.rod != old_rod || game.save.line != old_line) fishing_sound_play(SOUND_UPGRADE);
             announce_page(old_page);
         }

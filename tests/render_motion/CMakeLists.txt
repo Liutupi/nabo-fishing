@@ -10,12 +10,13 @@ add_subdirectory("${FIRMWARE}/managed_components/lvgl__lvgl" lvgl)
 configure_file(assets.S.in assets.S @ONLY)
 set(GAME_SOURCES "${CMAKE_CURRENT_BINARY_DIR}/assets.S"
     "${GAME}/fishing_motion.c" "${GAME}/fishing_intro.c" "${GAME}/fishing_ui.c" "${GAME}/fishing_tank.c"
-    "${GAME}/fishing_model.c" "${GAME}/fishing_font_14.c" "${GAME}/fishing_font_20.c")
+    "${GAME}/fishing_model.c" "${GAME}/fishing_feedback.c" "${GAME}/fishing_font_14.c" "${GAME}/fishing_font_20.c")
 # render_motion streams the portrait fishing loop; render_scenes saves stills of
 # the shore by season and time, and of the landscape aquarium.
 add_executable(render_motion render.c ${GAME_SOURCES})
 add_executable(render_scenes render_scenes.c ${GAME_SOURCES})
-foreach(tool render_motion render_scenes)
+add_executable(render_feedback render_feedback.c ${GAME_SOURCES})
+foreach(tool render_motion render_scenes render_feedback)
     target_include_directories(${tool} PRIVATE "${GAME}")
     target_link_libraries(${tool} PRIVATE lvgl)
 endforeach()

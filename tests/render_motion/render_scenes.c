@@ -40,7 +40,9 @@ static void run(unsigned ms)
 
 static void press(fish_button_t button)
 {
+    fish_page_t before = game.page;
     fish_press(&game, button, now);
+    fishing_ui_press(button, before, &game, now);
     run(40);
 }
 

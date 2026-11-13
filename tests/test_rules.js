@@ -197,8 +197,14 @@ function run(command, args, opts = {}) {
     return out.stdout;
 }
 try {
-    run(process.env.CC || 'cc', ['-std=c11', '-Wall', '-Wextra', '-Werror',
+    const cc = process.env.CC || 'cc';
+    run(cc, ['-std=c11', '-Wall', '-Wextra', '-Werror',
         '-I', 'firmware/main', 'tests/rules_cli.c', 'firmware/main/fishing_model.c', '-o', exe]);
+    const feedback = join(dir, 'feedback');
+    run(cc, ['-std=c11', '-Wall', '-Wextra', '-Werror', '-I', 'firmware/main',
+        'tests/test_feedback.c', 'firmware/main/fishing_feedback.c', 'firmware/main/fishing_model.c',
+        '-o', feedback]);
+    console.log(run(feedback, []).trim());
     const actual = run(exe, [], {input: commands.join('\n')}).trimEnd().split(/\r?\n/);
     assert.equal(actual.length, expected.length);
     actual.forEach((line, i) => assert.equal(line, expected[i], 'step ' + (i + 1)));

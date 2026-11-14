@@ -16,7 +16,7 @@
 #include "nvs.h"
 
 #define TAG "NABO-Fishing"
-#define SAVE_KEY "progress_v4"
+#define SAVE_KEY "progress_v5"
 // Idle handling has two steps. After STANDBY_US the backlight goes dark but the
 // game keeps running, so any key brings the screen back at once. Only after
 // SLEEP_US does the badge enter deep sleep, which needs a firm key press and a
@@ -39,8 +39,8 @@ static fish_save_t load_progress(void)
     nvs_handle_t handle;
     esp_err_t err = nvs_open("nabo_fish", NVS_READONLY, &handle);
     if (err == ESP_OK) {
-        static const char *const keys[] = {SAVE_KEY, "progress_v3", "progress_v2", "progress_v1"};
-        static const unsigned counts[] = {FISH_RECORD_WORDS, FISH_RECORD_WORDS_V3, 6, 3};
+        static const char *const keys[] = {SAVE_KEY, "progress_v4", "progress_v3", "progress_v2", "progress_v1"};
+        static const unsigned counts[] = {FISH_RECORD_WORDS, FISH_RECORD_WORDS_V4, FISH_RECORD_WORDS_V3, 6, 3};
         for (unsigned i = 0; i < sizeof keys / sizeof keys[0]; i++) {
             uint32_t record[FISH_RECORD_WORDS];
             size_t size = sizeof record;
@@ -194,7 +194,7 @@ void app_main(void)
         fish_tick(&game, now_ms());
         announce_page(old_page);
         if (dirty && now >= retry_at) write_progress(now);
-        if (game.page == FISH_TANK || game.page == FISH_CARE || game.page == FISH_SELL) last_input = now;
+        if (fish_is_aquarium(game.page)) last_input = now;
         if (!standby && now - last_input >= STANDBY_US) {
             standby = true;
             bsp_display_backlight(0);

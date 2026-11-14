@@ -29,13 +29,13 @@ static const lv_image_dsc_t cover = {
                .w = 240, .h = 320, .stride = 480},
     .data_size = 240 * 320 * 2, .data = welcome_cover_start,
 };
-static _Alignas(4) uint16_t pose_pixels[INTRO_W * INTRO_H];
+static _Alignas(4) uint16_t pose_pixels[FISHING_INTRO_SCRATCH_BYTES / 2];
 static const lv_image_dsc_t actor = {
     .header = {.magic = LV_IMAGE_HEADER_MAGIC, .cf = LV_COLOR_FORMAT_RGB565,
                .w = INTRO_W, .h = INTRO_H, .stride = INTRO_W * 2},
-    .data_size = sizeof pose_pixels, .data = (const uint8_t *)pose_pixels,
+    .data_size = INTRO_W * INTRO_H * 2, .data = (const uint8_t *)pose_pixels,
 };
-_Static_assert(sizeof pose_pixels == FISHING_INTRO_SCRATCH_BYTES, "scratch size must match the header");
+_Static_assert(sizeof pose_pixels >= INTRO_W * INTRO_H * 2, "scratch must also fit the intro frame");
 void *fishing_intro_scratch(void) { return pose_pixels; }
 static lv_obj_t *intro, *actor_image, *caption, *rod, *fish, *splash[6];
 static lv_point_precise_t rod_points[3];

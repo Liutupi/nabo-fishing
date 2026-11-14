@@ -14,8 +14,12 @@ static void save_checks(void)
     assert(fish_save_decode(&decoded, old, 3));
     assert(decoded.seen[0] == 63 && decoded.seen[1] == 0);
     decoded.line = 2;
-    decoded.pending = 100;
+    decoded.pending = FISH_COUNT;
+    decoded.seen[FISH_SAVE_WORDS - 1] = FISH_LAST_SEEN_MASK;
     decoded.tank[5] = (fish_pet_t){.species = 97, .growth = 2, .fed = 1};
+    fish_game_t initialized;
+    fish_init(&initialized, decoded, 1);
+    decoded = initialized.save;
     uint32_t record[FISH_RECORD_WORDS], copy[FISH_RECORD_WORDS];
     fish_save_encode(&decoded, record);
     assert(fish_save_decode(&decoded, record, FISH_RECORD_WORDS));
@@ -26,15 +30,30 @@ static void save_checks(void)
     record[13] = copy[13];
     assert(fish_save_decode(&decoded, record, FISH_RECORD_WORDS_V3) && decoded.clock == 0);
     assert(decoded.tank[5].species == 97 && decoded.line == 2);
-    record[14] = 143;
+    record[8 + FISH_TANK_SLOTS] = 143;
     assert(fish_save_decode(&decoded, record, FISH_RECORD_WORDS) && decoded.clock == 143);
-    record[14] = 144;
+    record[8 + FISH_TANK_SLOTS] = 144;
     assert(!fish_save_decode(&decoded, record, FISH_RECORD_WORDS));
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
     save_checks();
+    if (argc == 2 && strcmp(argv[1], "--catalog") == 0) {
+        fish_game_t book;
+        fish_init(&book, (fish_save_t){.rod = 1}, 0);
+        book.page = FISH_BOOK;
+        book.group = FISH_GROUP_COUNT - 1;
+        fish_press(&book, FISH_OK, 0);
+        fish_press(&book, FISH_UP, 0);
+        assert(book.group * FISH_GROUP_SIZE + book.book == FISH_COUNT - 1);
+        fish_press(&book, FISH_DOWN, 0);
+        assert(book.book == 0);
+        for (unsigned i = 0; i < FISH_COUNT; i++)
+            printf("%s\t%u\t%u\t%u\t%u\t%u\n", fish_species[i].name, fish_species[i].value,
+                   fish_species[i].level, fish_bait_for(i), fish_seasons_for(i), fish_periods_for(i));
+        return 0;
+    }
     fish_game_t game;
     fish_init(&game, (fish_save_t){.rod = 1}, 0);
     char op;

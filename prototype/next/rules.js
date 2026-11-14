@@ -1,13 +1,17 @@
 'use strict';
 
-const species = typeof module === 'undefined' ? catalogSpecies : require('../species.js');
+const species = typeof module === 'undefined' ? nextCatalogSpecies : require('./species.js');
+const GROUP_SIZE = 10, GROUP_COUNT = Math.ceil(species.length / GROUP_SIZE);
+const groupSize = group => Math.min(GROUP_SIZE, species.length - group * GROUP_SIZE);
+const SEEN_WORDS = 4;
+const LAST_SEEN_LIMIT = 2 ** (species.length - (SEEN_WORDS - 1) * 32);
 const baitNames = ['面团', '蚯蚓', '拟饵', '星光饵'];
-const preferences = '0010331102211232000002121212220011100112101111222222222222222211222222201001010033333333333333333333';
+const preferences = '00103311022112320000021212122200111001121011112222222222222222112222222010010100333333333333333333331222232211123232';
 const baitFor = id => Number(preferences[id]);
 // One hex digit per fish. Season bits: spring 1, summer 2, autumn 4, winter 8.
 // Period bits: dawn 1, day 2, dusk 4, night 8.
-const seasonMasks = 'ffcfff3cc63f9c6fffc6639cc6399c638969639cc6399c6839c4639cc6299c6339c6639cc6399c633813239c263f8424386f';
-const periodMasks = 'f7c788f6639c639cff39c6399c639c63f98339c6639c639cc63fc6399c339c6339c639c6639c639cc33f66398c2886283949';
+const seasonMasks = 'ffcfff3cc63f9c6fffc6639cc6399c638969639cc6399c6839c4639cc6299c6339c6639cc6399c633813239c263f8424386f63226c946363c218';
+const periodMasks = 'f7c788f6639c639cff39c6399c639c63f98339c6639c639cc63fc6399c339c6339c639c6639c639cc33f66398c2886283949363c68346956823c';
 const seasonNames = ['春', '夏', '秋', '冬'];
 const periodNames = ['清晨', '白天', '黄昏', '夜晚'];
 // The clock counts casts: 3 per period, 4 periods per day, 3 days per season.
@@ -28,7 +32,7 @@ const decors = [{name: '水草丛', price: 20}, {name: '贝壳堆', price: 25}, 
     {name: '陶罐', price: 45}, {name: '气泡石', price: 60}, {name: '小城堡', price: 80},
     {name: '宝箱', rare: true}, {name: '潜水头盔', rare: true}, {name: '水母灯', rare: true},
     {name: 'NABO 金像', rare: true}];
-const BOX_COST = 40, MAX_SLOTS = 8, BASE_SLOTS = 6;
+const BOX_COST = 40, MAX_SLOTS = 12, BASE_SLOTS = 6;
 const roomCost = capacity => (capacity - BASE_SLOTS + 1) * 80;
 // The store shelf, top to bottom. The last entry leaves the store.
 const shelf = [{kind: 'box'}, {kind: 'room'},
@@ -46,16 +50,16 @@ function create(save, seed) {
         save = {...save, seen: [save.seen, 0, 0, 0]};
     if (!save || !Number.isInteger(save.coins) || save.coins < 0 || save.coins > maxCoins ||
         !Number.isInteger(save.rod) || save.rod < 1 || save.rod > 4 ||
-        !Array.isArray(save.seen) || save.seen.length !== 4 || save.seen[3] > 15 ||
+        !Array.isArray(save.seen) || save.seen.length !== SEEN_WORDS || save.seen[SEEN_WORDS - 1] >= LAST_SEEN_LIMIT ||
         save.seen.some(word => !Number.isInteger(word) || word < 0 || word > maxCoins))
         save = {coins: 0, rod: 1, seen: [0, 0, 0, 0]};
     const line = Number.isInteger(save.line) && save.line >= 1 && save.line <= 4 ? save.line : 1;
     const clock = Number.isInteger(save.clock) && save.clock >= 0 && save.clock < YEAR_CASTS ? save.clock : 0;
-    const pending = Number.isInteger(save.pending) && save.pending >= 1 && save.pending <= 100 ? save.pending : 0;
-    const capacity = [6, 7, 8].includes(save.capacity) ? save.capacity : BASE_SLOTS;
+    const pending = Number.isInteger(save.pending) && save.pending >= 1 && save.pending <= species.length ? save.pending : 0;
+    const capacity = Number.isInteger(save.capacity) && save.capacity >= BASE_SLOTS && save.capacity <= MAX_SLOTS ? save.capacity : BASE_SLOTS;
     const tank = Array.from({length: MAX_SLOTS}, (_, i) => {
         const pet = Array.isArray(save.tank) && save.tank[i];
-        if (i >= capacity || !pet || !Number.isInteger(pet.species) || pet.species < 1 || pet.species > 100 ||
+        if (i >= capacity || !pet || !Number.isInteger(pet.species) || pet.species < 1 || pet.species > species.length ||
             !Number.isInteger(pet.growth) || pet.growth < 0 || pet.growth > 3 || ![0, 1].includes(pet.fed))
             return emptyPet();
         return {species: pet.species, growth: pet.growth, fed: pet.fed,
@@ -150,7 +154,7 @@ function openBox(game, now) {
         else own(game, game.prizeId);
         game.prize = PRIZE_RARE_DECOR;
     } else if (roll < 35) {
-        const pet = {species: 1 + pick(game, 100), growth: 0, fed: 0, variant: 1 + pick(game, 2)};
+        const pet = {species: 1 + pick(game, species.length), growth: 0, fed: 0, variant: 1 + pick(game, 2)};
         const free = save.tank.findIndex((slot, i) => i < save.capacity && !slot.species);
         game.prizeId = pet.species - 1;
         if (free < 0) game.prizeCoins = tankValue(pet);
@@ -338,18 +342,20 @@ function press(game, button, now) {
             game.notice = NONE;
             return true;
         case BOOK:
-            if (button === UP) game.group = (game.group + 10) % 11;
-            if (button === DOWN) game.group = (game.group + 1) % 11;
+            if (button === UP) game.group = (game.group + GROUP_COUNT) % (GROUP_COUNT + 1);
+            if (button === DOWN) game.group = (game.group + 1) % (GROUP_COUNT + 1);
             if (button === OK) {
-                page(game, game.group === 10 ? HOME : BOOK_FISH);
+                page(game, game.group === GROUP_COUNT ? HOME : BOOK_FISH);
                 game.book = 0;
             }
             break;
-        case BOOK_FISH:
-            if (button === UP) game.book = (game.book + 9) % 10;
-            if (button === DOWN) game.book = (game.book + 1) % 10;
+        case BOOK_FISH: {
+            const count = groupSize(game.group);
+            if (button === UP) game.book = (game.book + count - 1) % count;
+            if (button === DOWN) game.book = (game.book + 1) % count;
             if (button === OK) page(game, BOOK);
             break;
+        }
         case TANK: {
             // After the fish slots come two more stops: arrange the aquarium, then leave.
             const stops = game.save.capacity + 2;
@@ -409,5 +415,5 @@ function press(game, button, now) {
 
 const fishingRules = {species, baitNames, baitFor, create, press, tick, cursor, halfZone, cost,
     gearLevel, pulling, seen, tankValue, seasonNames, periodNames, periodOf, seasonOf, dayOf,
-    seasonsFor, periodsFor, active, tanks, decors, shelf, decorMenu, roomCost, BOX_COST, MAX_SLOTS};
+    seasonsFor, periodsFor, active, tanks, decors, shelf, decorMenu, roomCost, BOX_COST, MAX_SLOTS, GROUP_SIZE, GROUP_COUNT};
 if (typeof module !== 'undefined') module.exports = fishingRules;

@@ -1,13 +1,11 @@
-"""Pack aligned NABO poses and all 100 transparent fish for the ESP32 display."""
-from pathlib import Path
+"""Pack aligned NABO poses and transparent fish for the ESP32 display."""
 import struct
 
 from PIL import Image, ImageOps
 
-ROOT = Path(__file__).resolve().parents[2]
-ART = ROOT / "art"
+from fish_assets import ART, ROOT, append_from, atlas_size, card_box, species_names
+
 OUTPUT = ROOT / "firmware" / "main"
-CARD_W, CARD_H = 84, 60
 ACTOR_W, ACTOR_H = 140, 148
 ORIGIN_X, ORIGIN_Y = 0, 12
 HIP_X, HIP_Y = 62, 110
@@ -87,19 +85,25 @@ def fish_indices(card):
                                      bytes(0 if i in exterior else 255 for i in range(w*h))))
     return palette_data + indexed, preview
 
-def pack_fish():
+def pack_fish(count, start):
     atlas = Image.open(ART / "fish-catalog-preview.png").convert("RGB")
-    if atlas.size != (CARD_W * 10, CARD_H * 10):
+    if atlas.size != atlas_size(count):
         raise ValueError("unexpected fish atlas size")
+    output = OUTPUT / "fish_anim.pal"
+    record_size = 512 + 84 * 60
     packed, previews = [], []
-    for i in range(100):
-        x, y = i % 10 * CARD_W, i // 10 * CARD_H
-        data, preview = fish_indices(atlas.crop((x, y, x + CARD_W, y + CARD_H)))
+    if start:
+        prefix = output.read_bytes()[:start * record_size]
+        if len(prefix) != start * record_size:
+            raise ValueError("existing fish palette cannot supply the requested prefix")
+        packed.extend(prefix[i:i + record_size] for i in range(0, len(prefix), record_size))
+    for i in range(start, count):
+        data, preview = fish_indices(atlas.crop(card_box(i)))
         packed.append(data)
         previews.append(preview)
-    if len(set(packed)) != 100:
+    if len(set(packed)) != count:
         raise ValueError("duplicate fish sprite")
-    (OUTPUT / "fish_anim.pal").write_bytes(b"".join(packed))
+    output.write_bytes(b"".join(packed))
     return previews
 
 def pack_intro(cover):
@@ -154,22 +158,31 @@ def pack_intro(cover):
         encoding="ascii")
 
 
-dock = ImageOps.fit(Image.open(ART / "fishing-dock.png").convert("RGB"), (240, 160),
-                    Image.Resampling.LANCZOS)
-(OUTPUT / "dock.rgb565").write_bytes(colors565(dock))
-cover = ImageOps.fit(Image.open(ART / "boot-lake-plate.png").convert("RGB"),
-                     (240, 320), Image.Resampling.LANCZOS)
-(OUTPUT / "welcome_cover.rgb565").write_bytes(colors565(cover))
-pack_intro(cover)
-actors = pack_actors()
-fish = pack_fish()
-preview = Image.new("RGB", (4 * 240, 160 + 120), "#194451")
-for i, actor in enumerate(actors):
-    scene = dock.convert("RGBA")
-    scene.alpha_composite(actor, (ORIGIN_X, ORIGIN_Y))
-    preview.paste(scene, (i * 240, 0))
-for i, index in enumerate((0, 4, 5, 14, 34, 53, 80, 99)):
-    card = fish[index]
-    preview.paste(card, (i * 120 + 18, 187), card)
-preview.save(ART / "motion-sheet-preview.png")
+def main():
+    count = len(species_names())
+    start = append_from(count)
+    fish = pack_fish(count, start)
+    if start:
+        return
+    dock = ImageOps.fit(Image.open(ART / "fishing-dock.png").convert("RGB"), (240, 160),
+                        Image.Resampling.LANCZOS)
+    (OUTPUT / "dock.rgb565").write_bytes(colors565(dock))
+    cover = ImageOps.fit(Image.open(ART / "boot-lake-plate.png").convert("RGB"),
+                         (240, 320), Image.Resampling.LANCZOS)
+    (OUTPUT / "welcome_cover.rgb565").write_bytes(colors565(cover))
+    pack_intro(cover)
+    actors = pack_actors()
+    preview = Image.new("RGB", (4 * 240, 160 + 120), "#194451")
+    for i, actor in enumerate(actors):
+        scene = dock.convert("RGBA")
+        scene.alpha_composite(actor, (ORIGIN_X, ORIGIN_Y))
+        preview.paste(scene, (i * 240, 0))
+    for i, index in enumerate((0, 4, 5, 14, 34, 53, 80, 99)):
+        card = fish[index]
+        preview.paste(card, (i * 120 + 18, 187), card)
+    preview.save(ART / "motion-sheet-preview.png")
 
+
+
+if __name__ == "__main__":
+    main()

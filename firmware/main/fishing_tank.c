@@ -12,19 +12,23 @@ LV_FONT_DECLARE(fishing_font_20);
 typedef struct {
     uint8_t species, width, frame, speed;   // species is one-based; speed in px/s
     bool left, drawn_left;
-    uint8_t drawn_species, drawn_width, drawn_frame;
+    uint8_t drawn_species, drawn_width, drawn_frame, variant, drawn_variant;
     int16_t x, y, target_x, target_y;       // sprite centre
     uint16_t pause_ms, wag_ms;
 } swimmer_t;
 
 static const uint32_t ink = 0x102f38, paper = 0xffefd3, muted = 0xa6c3bc, gold = 0xffc85e;
-static const uint8_t widths[FISH_MAX_GROWTH + 1] = {48, 56, 64, FISHING_TANK_FISH_W};
-static lv_obj_t *root, *fish[FISH_TANK_SLOTS], *bubbles[6], *pellets[5], *marker;
-static lv_obj_t *count_text, *coin_text, *pips[FISH_TANK_SLOTS + 1], *empty_text;
+static const uint8_t widths[FISH_MAX_GROWTH + 1] = {36, 42, 49, FISHING_TANK_FISH_W};
+static lv_obj_t *root, *backdrop, *ornaments[FISH_DECOR_COUNT], *fish[FISH_TANK_SLOTS], *bubbles[6], *pellets[5], *marker;
+static lv_obj_t *count_text, *coin_text, *pips[FISH_TANK_SLOTS + 2], *empty_text;
 static lv_obj_t *name_text, *status_text, *keys_text;
 static swimmer_t swimmers[FISH_TANK_SLOTS];
 static uint32_t random_state, last_frame, fed_at;
 static bool feeding;
+static const uint16_t spots[FISH_DECOR_COUNT][2] = {
+    {51, 195}, {85, 193}, {301, 190}, {119, 187}, {17, 195}, {229, 195},
+    {190, 193}, {267, 195}, {22, 140}, {154, 189},
+};
 
 static lv_obj_t *block(lv_obj_t *parent, int x, int y, int w, int h, uint32_t rgb, int radius, lv_opa_t opa)
 {
@@ -68,9 +72,16 @@ static unsigned roll(unsigned count)
 void fishing_tank_init(lv_obj_t *screen)
 {
     root = block(screen, 0, 0, 320, 240, ink, 0, LV_OPA_COVER);
-    lv_obj_t *backdrop = lv_image_create(root);
+    backdrop = lv_image_create(root);
     lv_image_set_src(backdrop, &fishing_tank_backdrop);
     lv_obj_set_pos(backdrop, 0, 0);
+    lv_image_set_pivot(backdrop, 0, 0);
+    for (unsigned i = 0; i < FISH_DECOR_COUNT; i++) {
+        const lv_image_dsc_t *image = fishing_ornament(i);
+        ornaments[i] = lv_image_create(root);
+        lv_image_set_src(ornaments[i], image);
+        lv_obj_set_pos(ornaments[i], spots[i][0] - image->header.w / 2, spots[i][1] - image->header.h);
+    }
     for (unsigned i = 0; i < 6; i++)
         bubbles[i] = block(root, 0, 0, 2 + i % 2, 2 + i % 2, 0xcdfff0, 1, LV_OPA_60);
     for (unsigned i = 0; i < FISH_TANK_SLOTS; i++) fish[i] = lv_image_create(root);
@@ -83,13 +94,13 @@ void fishing_tank_init(lv_obj_t *screen)
     count_text = label(chip, 0, 2, 100, paper, &fishing_font_14, LV_TEXT_ALIGN_CENTER);
     chip = block(root, 216, 8, 96, 23, ink, 7, LV_OPA_90);
     coin_text = label(chip, 0, 2, 96, gold, &fishing_font_14, LV_TEXT_ALIGN_CENTER);
-    for (unsigned i = 0; i <= FISH_TANK_SLOTS; i++)   // the last pip is the way out
-        pips[i] = block(root, 116 + i * 13, 15, i == FISH_TANK_SLOTS ? 14 : 9, 8, ink, 3, LV_OPA_COVER);
+    for (unsigned i = 0; i < FISH_TANK_SLOTS + 2; i++)
+        pips[i] = block(root, 113 + i * 7, 15, 5, 8, ink, 2, LV_OPA_COVER);
 
-    lv_obj_t *panel = block(root, 8, 184, 304, 50, ink, 10, LV_OPA_90);
-    name_text = label(panel, 10, 1, 112, paper, &fishing_font_20, LV_TEXT_ALIGN_LEFT);
-    status_text = label(panel, 122, 6, 174, muted, &fishing_font_14, LV_TEXT_ALIGN_RIGHT);
-    keys_text = label(panel, 10, 28, 286, gold, &fishing_font_14, LV_TEXT_ALIGN_LEFT);
+    lv_obj_t *panel = block(root, 8, 197, 304, 37, ink, 10, LV_OPA_90);
+    name_text = label(panel, 10, 1, 147, paper, &fishing_font_14, LV_TEXT_ALIGN_LEFT);
+    status_text = label(panel, 145, 1, 151, muted, &fishing_font_14, LV_TEXT_ALIGN_RIGHT);
+    keys_text = label(panel, 10, 19, 286, gold, &fishing_font_14, LV_TEXT_ALIGN_LEFT);
     visible(root, false);
 }
 
@@ -110,43 +121,76 @@ static void wander(swimmer_t *s)
 
 void fishing_tank_draw(const fish_game_t *game, uint32_t now)
 {
-    static char count[24], coins[24], status[64];
+    static char count[40], coins[24], status[64], variant_name[48];
     const unsigned slot = game->slot;
     const unsigned kept = fish_tank_count(game);
     if (!random_state) random_state = now | 1u;
-    snprintf(count, sizeof count, "我的鱼缸 %u/%u", kept, FISH_TANK_SLOTS);
+    const unsigned capacity = game->save.capacity;
+    const unsigned theme = game->save.tank_type;
+    const lv_image_dsc_t *background = fishing_tank_theme(theme);
+    if (lv_image_get_src(backdrop) != background) {
+        lv_image_set_src(backdrop, background);
+        lv_image_set_scale(backdrop, theme ? 512 : 256);
+    }
+    const bool arranging = game->page == FISH_DECOR;
+    const fish_item_t item = arranging ? fish_decor_item(game, game->decor) : (fish_item_t){FISH_ITEM_EXIT, 0};
+    for (unsigned i = 0; i < FISH_DECOR_COUNT; i++) {
+        const bool shown = (game->save.decor_shown >> i) & 1;
+        const bool selected = item.kind == FISH_ITEM_DECOR && item.id == i;
+        visible(ornaments[i], shown || selected);
+        lv_obj_set_style_image_opa(ornaments[i], shown ? LV_OPA_COVER : LV_OPA_40, 0);
+    }
+    snprintf(count, sizeof count, "%s %u/%u", fish_tank_types[theme].name, kept, capacity);
     snprintf(coins, sizeof coins, "贝壳 %lu", (unsigned long)game->save.coins);
     lv_label_set_text_static(count_text, count);
     lv_label_set_text_static(coin_text, coins);
-    visible(empty_text, kept == 0);
-    for (unsigned i = 0; i <= FISH_TANK_SLOTS; i++) {
-        bool occupied = i < FISH_TANK_SLOTS && game->save.tank[i].species;
+    visible(empty_text, kept == 0 && !arranging);
+    for (unsigned i = 0; i < FISH_TANK_SLOTS + 2; i++) {
+        bool occupied = i < capacity && game->save.tank[i].species;
+        visible(pips[i], i < capacity + 2);
         lv_obj_set_style_bg_color(pips[i], lv_color_hex(i == slot ? gold : occupied ? 0x68dbb9 : ink), 0);
     }
     for (unsigned i = 0; i < FISH_TANK_SLOTS; i++) {
         const fish_pet_t *pet = &game->save.tank[i];
         swimmer_t *s = &swimmers[i];
         if (pet->species && s->species != pet->species) {   // a newcomer swims in from its own corner
-            *s = (swimmer_t){.x = (50 + (int)i * 44) * SUB, .y = (62 + (int)i * 53 % 100) * SUB,
+            *s = (swimmer_t){.x = (44 + (int)(i % 6) * 46) * SUB, .y = (52 + (int)(i % 2) * 31 + (int)(i / 6) * 38) * SUB,
                              .frame = i * 2};
             wander(s);
         }
         s->species = pet->species;
+        s->variant = pet->variant;
         s->width = widths[pet->growth];
         visible(fish[i], pet->species != 0);
     }
 
     const char *name = "返回岸边", *keys = "OK 返回   下 / 上 选鱼";
     status[0] = 0;
-    const fish_pet_t *pet = slot < FISH_TANK_SLOTS ? &game->save.tank[slot] : NULL;
-    if (pet && !pet->species) {
+    const fish_pet_t *pet = slot < capacity ? &game->save.tank[slot] : NULL;
+    if (arranging) {
+        keys = "上下 选择    OK 确认";
+        if (item.kind == FISH_ITEM_TANK) {
+            name = fish_tank_types[theme].name;
+            keys = "上下 选择    OK 换鱼缸";
+        } else if (item.kind == FISH_ITEM_DECOR) {
+            name = fish_decors[item.id].name;
+            keys = game->save.decor_shown & (1u << item.id) ? "上下 选择    OK 收起" : "上下 选择    OK 摆出来";
+        } else name = "布置好了";
+    } else if (slot == capacity) {
+        name = "布置鱼缸";
+        keys = "上下 选择    OK 进入";
+    } else if (pet && !pet->species) {
         static char vacancy[16];
         snprintf(vacancy, sizeof vacancy, "空位 %u", slot + 1);
         name = vacancy;
-        snprintf(status, sizeof status, "已养 %u/%u", kept, FISH_TANK_SLOTS);
+        snprintf(status, sizeof status, "已养 %u/%u", kept, capacity);
         keys = "下 后一格   上 前一格";
     } else if (pet) {
         name = fish_species[pet->species - 1].name;
+        if (pet->variant) {
+            snprintf(variant_name, sizeof variant_name, "异色%s", name);
+            name = variant_name;
+        }
         snprintf(status, sizeof status, "成长 %u/%u · %s", pet->growth, FISH_MAX_GROWTH,
                  pet->fed ? "已喂" : "待喂食");
         keys = "OK 照料   下 后一条   上 前一条";
@@ -207,26 +251,34 @@ void fishing_tank_animate(const fish_game_t *game, uint32_t now)
         unsigned rise = (now / 8 * (16 + i % 3 * 6) / 125 + i * 41) % 180;
         lv_obj_set_pos(bubbles[i], columns[i], 186 - (int)rise);
     }
+    const lv_image_dsc_t *lamp = fishing_ornament(8);
+    const int phase = now / 130 % 16;
+    lv_obj_set_y(ornaments[8], spots[8][1] - lamp->header.h + (phase < 8 ? phase : 16 - phase) - 4);
     const swimmer_t *chosen = NULL;
     for (unsigned i = 0; i < FISH_TANK_SLOTS; i++) {
         swimmer_t *s = &swimmers[i];
         if (!s->species) continue;
         advance(s, elapsed);
         if (s->drawn_species != s->species || s->drawn_width != s->width ||
-            s->drawn_left != s->left || s->drawn_frame != s->frame) {
-            const lv_image_dsc_t *sprite = fishing_tank_fish(i, s->species - 1, s->width, s->left, s->frame);
+            s->drawn_left != s->left || s->drawn_frame != s->frame || s->drawn_variant != s->variant) {
+            const lv_image_dsc_t *sprite = fishing_tank_fish(i, s->species - 1, s->width, s->left, s->frame, s->variant);
             if (s->drawn_species != s->species || s->drawn_width != s->width) lv_image_set_src(fish[i], sprite);
             lv_obj_invalidate(fish[i]);
             s->drawn_species = s->species;
             s->drawn_width = s->width;
             s->drawn_left = s->left;
             s->drawn_frame = s->frame;
+            s->drawn_variant = s->variant;
         }
         const int height = (s->width * 60 + 42) / 84;
         lv_obj_set_pos(fish[i], s->x / SUB - s->width / 2, s->y / SUB - height / 2);
         if (i == game->slot) chosen = s;
     }
-    visible(marker, chosen != NULL);
+    const fish_item_t item = game->page == FISH_DECOR ? fish_decor_item(game, game->decor) : (fish_item_t){FISH_ITEM_EXIT, 0};
+    const bool decorating = item.kind == FISH_ITEM_DECOR;
+    visible(marker, chosen != NULL || decorating);
+    if (decorating)
+        lv_obj_set_pos(marker, spots[item.id][0] - 4, lv_obj_get_y(ornaments[item.id]) - 7);
     unsigned fed = now - fed_at;
     bool dropping = chosen && feeding && fed < FEED_MS;
     for (unsigned i = 0; i < 5; i++) visible(pellets[i], dropping);

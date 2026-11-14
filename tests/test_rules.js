@@ -6,6 +6,9 @@ const {tmpdir} = require('node:os');
 const {join, resolve} = require('node:path');
 const {create, press, tick, species, seen, baitFor, pulling, tankValue, active, seasonOf, periodOf} = require('../prototype/rules.js');
 
+const next = require('../prototype/next/rules.js');
+const fullSeen = Array.from({length: 4}, (_, i) =>
+    2 ** Math.max(0, Math.min(32, species.length - i * 32)) - 1);
 const commands = [], expected = [];
 const [up, down, ok] = [0, 1, 2];
 let game;
@@ -157,9 +160,9 @@ for (let i = 0; i < 1500 && game.save.seen[3] <= 15; i++) {
     key(down, time);
     key(ok, time + 100);
     time += 250;
-    if (game.save.seen.every((bits, j) => bits === (j === 3 ? 15 : 0xffffffff))) break;
+    if (game.save.seen.every((bits, j) => bits === fullSeen[j])) break;
 }
-assert.deepEqual(game.save.seen, [0xffffffff, 0xffffffff, 0xffffffff, 15]);
+assert.deepEqual(game.save.seen, fullSeen);
 
 // Resting skips to the next period; a year wraps after 144 casts, and night fish stay in the night.
 init(7, 0, 4);
@@ -196,13 +199,25 @@ function run(command, args, opts = {}) {
     assert.equal(out.status, 0, out.stderr);
     return out.stdout;
 }
-try {
-    run(process.env.CC || 'cc', ['-std=c11', '-Wall', '-Wextra', '-Werror',
+function buildModel(...flags) {
+    run(process.env.CC || 'cc', ['-std=c11', '-Wall', '-Wextra', '-Werror', ...flags,
         '-I', 'firmware/main', 'tests/rules_cli.c', 'firmware/main/fishing_model.c', '-o', exe]);
+}
+try {
+    buildModel('-DFISH_LEGACY_CATALOG');
     const actual = run(exe, [], {input: commands.join('\n')}).trimEnd().split(/\r?\n/);
     assert.equal(actual.length, expected.length);
     actual.forEach((line, i) => assert.equal(line, expected[i], 'step ' + (i + 1)));
-    console.log('PASS: ' + actual.length + ' C/JS steps; old saves, bait/chum, fighting, 100 fish and aquarium');
+    console.log('PASS: ' + actual.length + ' C/JS steps; old saves, bait/chum, fighting, ' + species.length + ' fish and aquarium');
+    buildModel();
+    const catalog = run(exe, ['--catalog']).trimEnd().split(/\r?\n/);
+    assert.deepEqual(catalog, next.species.map(({name, value, level}, id) =>
+        [name, value, level, next.baitFor(id), next.seasonsFor(id), next.periodsFor(id)].join('	')));
+    console.log('PASS: ' + catalog.length + ' expanded C/JS catalog records, save and book boundaries');
+    run(process.env.CC || 'cc', ['-std=c11', '-Wall', '-Wextra', '-Werror', '-I', 'firmware/main',
+        'tests/test_aquarium_v06.c', 'firmware/main/fishing_model.c', '-o', exe]);
+    run(exe, []);
+    console.log('PASS: v0.6 device shop, blind boxes, aquarium setup, and save migration');
     console.log('Matching bait in fixed seed run: ' + matches + '/160, chummed: ' + chummedMatches + '/160');
 } finally {
     rmSync(dir, {recursive: true, force: true});

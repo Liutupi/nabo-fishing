@@ -6,11 +6,13 @@ set(CONFIG_LV_BUILD_EXAMPLES OFF)
 set(CONFIG_LV_USE_THORVG_INTERNAL OFF)
 set(FIRMWARE "${CMAKE_CURRENT_SOURCE_DIR}/../../firmware")
 set(GAME "${FIRMWARE}/main")
-add_subdirectory("${FIRMWARE}/managed_components/lvgl__lvgl" lvgl)
+set(LVGL_SOURCE "${FIRMWARE}/managed_components/lvgl__lvgl" CACHE PATH "Path to LVGL 9.5 source")
+add_subdirectory("${LVGL_SOURCE}" lvgl)
 configure_file(assets.S.in assets.S @ONLY)
 set(GAME_SOURCES "${CMAKE_CURRENT_BINARY_DIR}/assets.S"
     "${GAME}/fishing_motion.c" "${GAME}/fishing_intro.c" "${GAME}/fishing_ui.c" "${GAME}/fishing_tank.c"
-    "${GAME}/fishing_model.c" "${GAME}/fishing_font_14.c" "${GAME}/fishing_font_20.c")
+    "${GAME}/fishing_model.c" "${GAME}/fishing_font_14.c" "${GAME}/fishing_font_20.c"
+    "${GAME}/fishing_shop_font_14.c" "${GAME}/fishing_shop_font_20.c")
 # render_motion streams the portrait fishing loop; render_scenes saves stills of
 # the shore by season and time, and of the landscape aquarium.
 add_executable(render_motion render.c ${GAME_SOURCES})

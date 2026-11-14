@@ -2,7 +2,7 @@
 
 FoloToy AI Passport ESP32-C3 的独立离线钓鱼游戏。上、下键切换项目，OK 确认。
 
-`prototype/next/index.html` 是 v0.6 的设计预览：商店、鱼缸装饰、四款鱼缸、鱼缸扩容和盲盒，只在浏览器里能玩，固件还没有。规则见 `DESIGN.md` 末节，`node tests/test_next_rules.js` 检查这部分规则。
+`prototype/next/index.html` 是 v0.6 的设计预览，包含商店、十件装饰、四款鱼缸、12 格扩容和盲盒。v0.6.0 固件已加入这些玩法，图鉴扩展至 116 种。规则见 `DESIGN.md` 末节，`node tests/test_next_rules.js` 检查这部分规则。
 
 v0.5.1 改了息屏方式。两分钟无操作先关背光待机，游戏仍在运行，按任意键立刻亮屏，这次按键只负责亮屏。待机满约 25 分钟才进入深睡；深睡后要按键唤醒并重启，上键电平最低，最容易唤醒。鱼缸页面作为摆件常亮，不会息屏或休眠。
 
@@ -20,13 +20,22 @@ v0.3.0 为 NABO 加入待机、抛竿、咬钩反应和提竿姿势。成功收�
 
 v0.2.0 重绘了 240×320 界面、NABO 钓鱼服和湖畔场景。100 种鱼均有独立插画，图鉴分十册，按上下键翻册或翻鱼，OK 打开或返回。目录末项可回到岸边。开机有「NABO，陪你钓鱼」语音，可按任意键跳过。抛竿、咬钩、上鱼、脱钩和升级有不同音效。游戏读取工牌已有的扬声器和音量设置，休眠唤醒直接回首页。
 
-贝壳、装备、图鉴、鱼缸和时钟写入 `nabo_fish/progress_v4`。旧版 `progress_v1`、`progress_v2` 和 `progress_v3` 可以读入，首次新增进度时写入新版记录。钓到但还没选择出售或放进鱼缸的鱼也会保存。两分钟无操作关背光待机，约 25 分钟无操作进入深睡，按键可唤醒；鱼缸页面常亮。存档失败时界面提示并重试。
+贝壳、装备、图鉴、鱼缸和时钟写入 `nabo_fish/progress_v5`。`progress_v1` 至 `progress_v4` 可以读入，首次新增进度时写入新版记录。钓到但还没选择出售或放进鱼缸的鱼也会保存。两分钟无操作关背光待机，约 25 分钟无操作进入深睡，按键可唤醒；鱼缸页面常亮。存档失败时界面提示并重试。
 
 Windows 使用 `./build.ps1`，以 ESP-IDF 6.0.2 和 LVGL 9.5.0 构建。合并镜像位于 `firmware/build-idf6/nabo-fishing-merged.bin`。已有进度的工牌应先识别实际分区并备份，再评估应用分区升级。全量镜像从 `0x0` 安装会覆盖 NVS 所在区域。
 
-运行 `node tests/test_rules.js` 可对拍生产 C 和浏览器规则。测试需要宿主 C 编译器，可用环境变量 `CC` 指定。对拍覆盖不同鱼饵、打窝、断线、钓齐 100 种鱼、装备、喂食和旧存档读取。硬件按键、画面、语音、休眠及断电恢复待真机验收。
+运行 `node tests/test_rules.js` 可对拍生产 C 和浏览器规则。测试需要宿主 C 编译器，可用环境变量 `CC` 指定。对拍覆盖发布版的不同鱼饵、打窝、断线、图鉴、装备、喂食和旧存档读取，同时校验预览新增鱼种的 C/JS 数据。硬件按键、画面、语音、休眠及断电恢复待真机验收。
 
-动作素材由 `python firmware/tools/generate_motion.py` 打包。之后依次运行 `generate_night_actor.py`（月光下的 NABO）、`generate_shore.py`（16 张岸边背景）和 `generate_tank.py`（鱼缸背景）。先执行固件构建获取 LVGL 依赖，再用本机 CMake 和 C 编译器构建 `tests/render_motion`。运行 `render_motion <输出文件>` 可导出 240×320 的 RGB565 动画帧，并检查 100 种鱼在摆尾时的像素覆盖。
+动作素材由 `python firmware/tools/generate_motion.py` 打包。之后依次运行 `generate_night_actor.py`（月光下的 NABO）、`generate_shore.py`（16 张岸边背景）和 `generate_tank.py`（鱼缸背景）。先执行固件构建获取 LVGL 依赖，再用本机 CMake 和 C 编译器构建 `tests/render_motion`。运行 `render_motion <输出文件>` 可导出 240×320 的 RGB565 动画帧，并检查全部鱼种在摆尾时的像素覆盖。
+
+追加鱼种时，依次运行下列脚本。生成的图鉴预览、固件动画包与透明图集的旧鱼数据由 `--append-from 100` 保留，旧源图不需要编辑。
+
+```sh
+python3 firmware/tools/generate_lake.py --append-from 100
+python3 firmware/tools/generate_catalog.py
+python3 firmware/tools/generate_motion.py --append-from 100
+python3 firmware/tools/generate_fish_alpha.py --append-from 100
+```
 
 同一目录还会构建 `render_scenes`。运行 `render_scenes <输出目录>` 后用 `python tests/render_motion/scenes.py <输出目录> <图片.png>` 拼出各季节岸边、图鉴和横版鱼缸的画面，用的是固件自己的界面代码。
 

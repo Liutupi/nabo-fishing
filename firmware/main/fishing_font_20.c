@@ -10,6 +10,8 @@
 #include "lvgl.h"
 #endif
 
+LV_FONT_DECLARE(fishing_shop_font_20);
+
 #ifndef FISHING_FONT_20
 #define FISHING_FONT_20 1
 #endif
@@ -9789,7 +9791,7 @@ lv_font_t fishing_font_20 = {
 #endif
     .dsc = &font_dsc,          /*The custom font data. Will be accessed by `get_glyph_bitmap/dsc` */
 #if LV_VERSION_CHECK(8, 2, 0) || LVGL_VERSION_MAJOR >= 9
-    .fallback = NULL,
+    .fallback = &fishing_shop_font_20,
 #endif
     .user_data = NULL,
 };

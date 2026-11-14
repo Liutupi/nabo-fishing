@@ -27,3 +27,8 @@ _binary_nabo_anim_rgb565a_start:
 .global _binary_fish_anim_pal_start
 _binary_fish_anim_pal_start:
 .incbin "@GAME@/fish_anim.pal"
+
+.balign 4
+.global _binary_aquarium_rgb565a_start
+_binary_aquarium_rgb565a_start:
+.incbin "@GAME@/aquarium.rgb565a"

@@ -1,14 +1,11 @@
-"""Export art/fish-catalog-alpha.png: the 100 fish cards with a transparent backdrop.
+"""Export art/fish-catalog-alpha.png: the fish cards with a transparent backdrop.
 
 Uses the same connected-backdrop flood fill as generate_motion.py, so the
 browser tank shows the silhouettes the firmware sprites have.
 """
-from pathlib import Path
-
 from PIL import Image
 
-ROOT = Path(__file__).resolve().parents[2]
-CARD_W, CARD_H = 84, 60
+from fish_assets import ART, append_from, atlas_size, card_box, species_names
 
 def cutout(card):
     w, h = card.size
@@ -33,9 +30,21 @@ def cutout(card):
                                     bytes(0 if i in exterior else 255 for i in range(w * h))))
     return result
 
-atlas = Image.open(ROOT / "art/fish-catalog-preview.png").convert("RGB")
+count = len(species_names())
+start = append_from(count)
+atlas = Image.open(ART / "fish-catalog-preview.png").convert("RGB")
+if atlas.size != atlas_size(count):
+    raise ValueError("unexpected fish atlas size")
+output = ART / "fish-catalog-alpha.png"
 sheet = Image.new("RGBA", atlas.size)
-for i in range(100):
-    x, y = i % 10 * CARD_W, i // 10 * CARD_H
-    sheet.paste(cutout(atlas.crop((x, y, x + CARD_W, y + CARD_H))), (x, y))
-sheet.save(ROOT / "art/fish-catalog-alpha.png")
+if start:
+    with Image.open(output) as previous:
+        if previous.width != sheet.width or previous.height < atlas_size(start)[1]:
+            raise ValueError("existing alpha atlas cannot supply the requested prefix")
+        for i in range(start):
+            box = card_box(i)
+            sheet.paste(previous.crop(box), box[:2])
+for i in range(start, count):
+    box = card_box(i)
+    sheet.paste(cutout(atlas.crop(box)), box[:2])
+sheet.save(output)

@@ -110,10 +110,10 @@ int main(int argc, char **argv)
     full.tank[1] = (fish_pet_t){.species = 27, .growth = 0};
     full.tank[2] = (fish_pet_t){.species = 83, .growth = 2};
     full.tank[3] = (fish_pet_t){.species = 58, .growth = 1};
-    full.tank[4] = (fish_pet_t){.species = 100, .growth = 3};
+    full.tank[4] = (fish_pet_t){.species = FISH_COUNT, .growth = 3};
     full.tank[5] = (fish_pet_t){.species = 51, .growth = 2};
     start(full);
-    press(FISH_UP);
+    press(FISH_UP); press(FISH_UP);
     press(FISH_OK);
     assert(game.page == FISH_TANK && lv_display_get_horizontal_resolution(display) == 320);
     run(3000);
@@ -133,7 +133,7 @@ int main(int argc, char **argv)
     assert(!game.save.tank[2].species);
     run(400);
     save("tank-empty-slot");
-    for (unsigned i = 0; i < 4; i++) press(FISH_DOWN);
+    for (unsigned i = 0; i < 5; i++) press(FISH_DOWN);
     save("tank-exit");
     press(FISH_OK);
     assert(game.page == FISH_HOME && lv_display_get_horizontal_resolution(display) == 240);
@@ -145,9 +145,38 @@ int main(int argc, char **argv)
     save("catalog-after-tank");
 
     start((fish_save_t){.rod = 1, .line = 1});
-    press(FISH_UP); press(FISH_OK);
+    press(FISH_UP); press(FISH_UP); press(FISH_OK);
     run(400);
     save("tank-empty");
+
+    full.capacity = FISH_TANK_SLOTS;
+    full.tanks_owned = 15;
+    full.decor_owned = full.decor_shown = 1023;
+    full.coins = 5000;
+    for (unsigned i = 0; i < FISH_TANK_SLOTS; i++)
+        full.tank[i] = (fish_pet_t){.species = 101 + i, .growth = i % 4, .variant = i % 3};
+    start(full);
+    press(FISH_UP); press(FISH_OK);
+    save("store-blind-box");
+    press(FISH_OK);
+    run(960);
+    save("box-reveal");
+    press(FISH_UP); press(FISH_UP); press(FISH_OK);
+    assert(game.page == FISH_HOME);
+    press(FISH_UP); press(FISH_OK);
+    for (unsigned i = 0; i < FISH_TANK_SLOTS; i++) press(FISH_DOWN);
+    press(FISH_OK);
+    assert(game.page == FISH_DECOR);
+    for (unsigned i = 0; i < FISH_TANK_TYPES; i++) {
+        char name[24];
+        snprintf(name, sizeof name, "aquarium-theme-%u", game.save.tank_type);
+        run(200);
+        save(name);
+        press(FISH_OK);
+    }
+    press(FISH_DOWN); press(FISH_OK);
+    assert(!(game.save.decor_shown & 1));
+    save("aquarium-ornament-hidden");
     printf("%u scenes rendered\n", saved);
     return 0;
 }

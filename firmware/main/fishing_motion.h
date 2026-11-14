@@ -1,5 +1,6 @@
 #pragma once
 #include "lvgl.h"
+#include "fishing_model.h"
 
 typedef enum {
     NABO_IDLE, NABO_WINDUP, NABO_CAST, NABO_HOOK, NABO_POSE_COUNT,
@@ -13,9 +14,12 @@ lv_point_precise_t fishing_grip(nabo_pose_t pose);
 
 // Single scratch sprite shared by the result and catalog under the LVGL lock.
 const lv_image_dsc_t *fishing_fish_frame(unsigned species, unsigned frame);
+const lv_image_dsc_t *fishing_fish_variant(unsigned species, unsigned frame, unsigned variant);
+const lv_image_dsc_t *fishing_tank_theme(unsigned type);
+const lv_image_dsc_t *fishing_ornament(unsigned id);
 
-enum { FISHING_TANK_FISH_W = 72, FISHING_TANK_FISH_H = 52 };
+enum { FISHING_TANK_FISH_W = 56, FISHING_TANK_FISH_H = 40 };
 // Each aquarium slot owns a sprite. The fish is scaled to `width` pixels wide
 // (at most FISHING_TANK_FISH_W) and mirrored when it swims to the left.
 const lv_image_dsc_t *fishing_tank_fish(unsigned slot, unsigned species, unsigned width,
-                                        bool faces_left, unsigned frame);
+                                        bool faces_left, unsigned frame, unsigned variant);

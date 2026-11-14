@@ -2,7 +2,7 @@
 #define LV_CONF_H
 #define LV_COLOR_DEPTH 16
 #define LV_FONT_FMT_TXT_LARGE 1
-#define LV_MEM_SIZE (48U * 1048U)
+#define LV_MEM_SIZE (64U * 1024U)
 #define LV_USE_ASSERT_MALLOC 1
 #define LV_USE_ASSERT_OBJ 1
 #define LV_USE_LOG 1

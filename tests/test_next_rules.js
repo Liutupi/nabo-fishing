@@ -20,6 +20,7 @@ game = rules.create({coins: 4000, rod: 1, seen: [0, 0, 0, 0]}, 11);
 rules.press(game, up, 0);
 rules.press(game, ok, 1);
 const prizes = new Set();
+const prizeFish = new Set();
 let time = 10;
 for (let i = 0; i < 300 && game.save.coins >= rules.BOX_COST; i++) {
     const before = game.save.coins;
@@ -27,6 +28,7 @@ for (let i = 0; i < 300 && game.save.coins >= rules.BOX_COST; i++) {
     assert.equal(game.page, BOX);
     assert.equal(game.save.coins, before - rules.BOX_COST + game.prizeCoins);
     prizes.add(game.prize);
+    if (game.prize === 2) prizeFish.add(game.prizeId);
     rules.press(game, ok, time + 100);
     assert.equal(game.page, BOX, 'the lid needs 0.9 s to open');
     rules.press(game, ok, time + 1000);
@@ -34,6 +36,7 @@ for (let i = 0; i < 300 && game.save.coins >= rules.BOX_COST; i++) {
     time += 2000;
 }
 assert.equal(prizes.size, 5, 'every kind of prize turned up');
+assert.ok([...prizeFish].some(id => id >= require('../prototype/species.js').length));
 assert.equal(game.save.decorShown & ~game.save.decorOwned, 0);
 assert.ok(game.save.tank.slice(game.save.capacity).every(pet => !pet.species));
 assert.ok(game.save.tank.filter(pet => pet.species).every(pet => pet.variant === 1 || pet.variant === 2));
@@ -53,4 +56,36 @@ rules.press(copy, down, 21);
 const shown = copy.save.decorShown;
 assert.equal(rules.press(copy, ok, 22), true);
 assert.equal(copy.save.decorShown, shown ^ 1 << menu[1].id);
-console.log('PASS: v0.6 preview rules (store, blind boxes, ornaments)');
+// Existing eight-slot saves grow through the normal store path and round-trip at capacity.
+const expanded = rules.create({coins: 5000, rod: 1, seen: [0, 0, 0, 0], capacity: 8}, 1);
+rules.press(expanded, up, 0);
+rules.press(expanded, ok, 1);
+rules.press(expanded, down, 2);
+while (expanded.save.capacity < rules.MAX_SLOTS) {
+    const {capacity, coins} = expanded.save;
+    assert.equal(rules.press(expanded, ok, 3), true);
+    assert.equal(expanded.save.capacity, capacity + 1);
+    assert.equal(expanded.save.coins, coins - rules.roomCost(capacity));
+}
+assert.equal(rules.press(expanded, ok, 4), false);
+assert.equal(expanded.save.tank.length, rules.MAX_SLOTS);
+
+const last = rules.species.length - 1;
+const save = expanded.save;
+save.seen[last >>> 5] = 2 ** (last % 32);
+save.tank[rules.MAX_SLOTS - 1] = {species: last + 1, growth: 3, fed: 0, variant: 2};
+save.pending = last + 1;
+const restored = rules.create(JSON.parse(JSON.stringify(save)), 0);
+assert.deepEqual(restored.save, save);
+assert.equal(restored.caught, last);
+assert.equal(rules.seen(restored, last), true);
+
+// The last book has six records and wraps from first to last without showing blank cells.
+restored.page = 5;
+restored.group = rules.GROUP_COUNT - 1;
+rules.press(restored, ok, 0);
+rules.press(restored, up, 0);
+assert.equal(restored.group * rules.GROUP_SIZE + restored.book, last);
+rules.press(restored, down, 0);
+assert.equal(restored.book, 0);
+console.log('PASS: v0.6 preview rules (store, blind boxes, ornaments, catalog and capacity)');

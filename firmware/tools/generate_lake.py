@@ -1,29 +1,52 @@
-from pathlib import Path
 from PIL import Image, ImageChops, ImageOps
 
-root = Path(__file__).resolve().parents[2]
+from fish_assets import ART, CARD_W, CARD_H, append_from, atlas_size, card_box, species_names
 
-cards = []
-for sheet in range(1, 8):
-    atlas = Image.open(root / f"art/fish-{sheet:02}.png").convert("RGB")
-    columns = 2 if sheet == 7 else 4
-    for row in range(columns):
-        for col in range(columns):
-            cell = atlas.crop((col * atlas.width // columns, row * atlas.height // columns,
-                               (col + 1) * atlas.width // columns, (row + 1) * atlas.height // columns))
-            bg = cell.getpixel((1, 1))
-            diff = ImageChops.difference(cell, Image.new("RGB", cell.size, bg))
-            bounds = diff.convert("L").point(lambda v: 255 if v > 24 else 0).getbbox()
-            if not bounds:
-                raise ValueError(f"empty fish in sheet {sheet}, row {row}, column {col}")
-            left, top, right, bottom = bounds
-            cell = cell.crop((max(0, left - 5), max(0, top - 5),
-                              min(cell.width, right + 5), min(cell.height, bottom + 5)))
-            card = ImageOps.pad(cell, (84, 60), Image.Resampling.LANCZOS, color=bg)
-            cards.append(card)
 
-assert len(cards) == 100
-preview = Image.new("RGB", (840, 600), "#10343b")
-for i, card in enumerate(cards):
-    preview.paste(card, (i % 10 * 84, i // 10 * 60))
-preview.save(root / "art/fish-catalog-preview.png")
+def source_cell(index):
+    # The seventh legacy sheet is 2×2. All new source sheets are 4×4.
+    if index < 96:
+        sheet, cell = divmod(index, 16)
+        return sheet + 1, 4, cell
+    if index < 100:
+        return 7, 2, index - 96
+    sheet, cell = divmod(index - 100, 16)
+    return sheet + 8, 4, cell
+
+
+def make_card(atlas, columns, cell, sheet):
+    row, col = divmod(cell, columns)
+    card = atlas.crop((col * atlas.width // columns, row * atlas.height // columns,
+                       (col + 1) * atlas.width // columns, (row + 1) * atlas.height // columns))
+    bg = card.getpixel((1, 1))
+    diff = ImageChops.difference(card, Image.new("RGB", card.size, bg))
+    bounds = diff.convert("L").point(lambda value: 255 if value > 24 else 0).getbbox()
+    if not bounds:
+        raise ValueError(f"empty fish in sheet {sheet}, row {row}, column {col}")
+    left, top, right, bottom = bounds
+    card = card.crop((max(0, left - 5), max(0, top - 5),
+                      min(card.width, right + 5), min(card.height, bottom + 5)))
+    return ImageOps.pad(card, (CARD_W, CARD_H), Image.Resampling.LANCZOS, color=bg)
+
+
+count = len(species_names())
+start = append_from(count)
+output = ART / "fish-catalog-preview.png"
+preview = Image.new("RGB", atlas_size(count), "#10343b")
+if start:
+    with Image.open(output) as previous:
+        if previous.width != preview.width or previous.height < atlas_size(start)[1]:
+            raise ValueError("existing fish preview cannot supply the requested prefix")
+        for index in range(start):
+            box = card_box(index)
+            preview.paste(previous.crop(box), box[:2])
+
+sheet = None
+for index in range(start, count):
+    number, columns, cell = source_cell(index)
+    if number != sheet:
+        with Image.open(ART / f"fish-{number:02}.png") as image:
+            atlas = image.convert("RGB")
+        sheet = number
+    preview.paste(make_card(atlas, columns, cell, sheet), card_box(index)[:2])
+preview.save(output)

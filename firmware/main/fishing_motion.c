@@ -15,6 +15,7 @@ extern const uint8_t shore_start[] asm("_binary_shore_rgb565_start");
 extern const uint8_t tank_start[] asm("_binary_tank_rgb565_start");
 extern const uint8_t nabo_start[] asm("_binary_nabo_anim_rgb565a_start");
 extern const uint8_t nabo_night_start[] asm("_binary_nabo_night_rgb565a_start");
+extern const uint8_t aquarium_start[] asm("_binary_aquarium_rgb565a_start");
 extern const uint8_t fish_start[] asm("_binary_fish_anim_pal_start");
 
 #define SHORE_BYTES (240 * 160 * 2)
@@ -39,6 +40,27 @@ const lv_image_dsc_t fishing_tank_backdrop = {
                .w = 320, .h = 240, .stride = 640},
     .data_size = 320 * 240 * 2, .data = tank_start,
 };
+
+#define AQUARIUM_IMAGE(width, height, offset, bytes, format) { \
+    .header = {.magic = LV_IMAGE_HEADER_MAGIC, .cf = LV_COLOR_FORMAT_##format, \
+               .w = (width), .h = (height), .stride = (width) * 2}, \
+    .data_size = (bytes), .data = aquarium_start + (offset), \
+}
+static const lv_image_dsc_t aquarium_images[] = {
+#include "fishing_aquarium_assets.inc"
+};
+_Static_assert(sizeof aquarium_images / sizeof aquarium_images[0] ==
+               FISH_TANK_TYPES - 1 + FISH_DECOR_COUNT, "aquarium image tables must agree");
+
+const lv_image_dsc_t *fishing_tank_theme(unsigned type)
+{
+    return type && type < FISH_TANK_TYPES ? &aquarium_images[type - 1] : &fishing_tank_backdrop;
+}
+
+const lv_image_dsc_t *fishing_ornament(unsigned id)
+{
+    return id < FISH_DECOR_COUNT ? &aquarium_images[FISH_TANK_TYPES - 1 + id] : NULL;
+}
 
 #define ACTOR_FRAME(start, i) { \
     .header = {.magic = LV_IMAGE_HEADER_MAGIC, .cf = LV_COLOR_FORMAT_RGB565A8, \
@@ -68,7 +90,7 @@ static const lv_image_dsc_t fish_sprite = {
 };
 
 #define WAVE_FRAMES 12
-static unsigned catalog_species = FISH_COUNT, catalog_frame;  // what fish_buffer holds
+static unsigned catalog_species = FISH_COUNT, catalog_frame, catalog_variant;  // what fish_buffer holds
 
 // Vertical shift of one source column for a tail-wag frame. The art faces right.
 static int column_bend(const uint8_t *indices, int x, unsigned frame)
@@ -91,13 +113,27 @@ static int column_bend(const uint8_t *indices, int x, unsigned frame)
     return bend;
 }
 
+static uint16_t recolor(uint16_t color, unsigned variant)
+{
+    const unsigned r = color >> 11, g = (color >> 5) & 63, b = color & 31;
+    if (variant == 1) return (b << 11) | (((r << 1) | (r >> 4)) << 5) | (g >> 1);
+    if (variant == 2) return ((g >> 1) << 11) | (((b << 1) | (b >> 4)) << 5) | r;
+    return color;
+}
+
 const lv_image_dsc_t *fishing_fish_frame(unsigned species, unsigned frame)
+{
+    return fishing_fish_variant(species, frame, 0);
+}
+
+const lv_image_dsc_t *fishing_fish_variant(unsigned species, unsigned frame, unsigned variant)
 {
     if (species >= FISH_COUNT) return NULL;
     frame %= WAVE_FRAMES;
-    if (catalog_species == species && catalog_frame == frame) return &fish_sprite;
+    if (catalog_species == species && catalog_frame == frame && catalog_variant == variant) return &fish_sprite;
     catalog_species = species;
     catalog_frame = frame;
+    catalog_variant = variant;
     const uint8_t *palette = fish_start + species * FISH_RECORD;
     const uint8_t *indices = palette + 512;
     uint8_t *alpha = (uint8_t *)(fish_buffer + FISH_PIXELS);
@@ -108,7 +144,7 @@ const lv_image_dsc_t *fishing_fish_frame(unsigned species, unsigned frame)
             const unsigned p = y * FISH_W + x;
             unsigned color = 0;
             if (source_y >= 0 && source_y < FISH_H) color = indices[source_y * FISH_W + x];
-            fish_buffer[p] = palette[color * 2] | ((uint16_t)palette[color * 2 + 1] << 8);
+            fish_buffer[p] = recolor(palette[color * 2] | ((uint16_t)palette[color * 2 + 1] << 8), variant);
             alpha[p] = color ? 255 : 0;
         }
     }
@@ -121,12 +157,10 @@ _Static_assert((FISH_TANK_SLOTS - 1) * TANK_BYTES <= FISHING_INTRO_SCRATCH_BYTES
 static lv_image_dsc_t tank_sprites[FISH_TANK_SLOTS];
 
 const lv_image_dsc_t *fishing_tank_fish(unsigned slot, unsigned species, unsigned width,
-                                        bool faces_left, unsigned frame)
+                                        bool faces_left, unsigned frame, unsigned variant)
 {
     if (slot >= FISH_TANK_SLOTS || species >= FISH_COUNT || !width) return NULL;
-    // No RAM is spare for six more sprites. The welcome animation's buffer is
-    // idle after boot and holds five; the catalog sprite, hidden while the
-    // aquarium is open, holds the sixth.
+    // Reuse the intro scratch for eleven sprites and catalog scratch for one.
     uint8_t *data = slot ? (uint8_t *)fishing_intro_scratch() + (slot - 1) * TANK_BYTES
                          : (uint8_t *)fish_buffer;
     if (!slot) catalog_species = FISH_COUNT;
@@ -144,7 +178,7 @@ const lv_image_dsc_t *fishing_tank_fish(unsigned slot, unsigned species, unsigne
             const int source_y = y * FISH_H / h - bend;
             unsigned color = 0;
             if (source_y >= 0 && source_y < FISH_H) color = indices[source_y * FISH_W + source_x];
-            colors[y * w + x] = palette[color * 2] | ((uint16_t)palette[color * 2 + 1] << 8);
+            colors[y * w + x] = recolor(palette[color * 2] | ((uint16_t)palette[color * 2 + 1] << 8), variant);
             alpha[y * w + x] = color ? 255 : 0;
         }
     }

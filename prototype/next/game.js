@@ -3,7 +3,7 @@
     const {species, baitNames, baitFor, create, press, tick, cursor, halfZone,
         cost, gearLevel, seen, tankValue, pulling, seasonNames, periodNames,
         periodOf, seasonOf, dayOf, seasonsFor, periodsFor, active, tanks, decors, shelf, decorMenu,
-        roomCost, BOX_COST} = fishingRules;
+        roomCost, BOX_COST, MAX_SLOTS, GROUP_SIZE, GROUP_COUNT} = fishingRules;
     const key = 'nabo-fishing-prototype-next';   // kept apart from the released prototype's save
     const time = () => Math.floor(performance.now()) >>> 0;
     const seed = () => Math.floor(Math.random() * 0x100000000);
@@ -58,18 +58,18 @@
     const backdrops = tanks.map((_, i) => picture('tanks/tank-' + i + '.png'));
     const ornaments = decors.map((_, i) => picture('decor/decor-' + i + '.png'));
     // Where each ornament stands: centre x and the y of its base. The jellyfish lamp floats.
-    const spots = [[52, 190], [100, 192], [296, 190], [140, 190], [18, 190], [228, 188],
-        [180, 192], [266, 190], [76, 96], [124, 150]];
+    const spots = [[51, 195], [85, 193], [301, 190], [119, 187], [17, 195], [229, 195],
+        [190, 193], [267, 195], [22, 140], [154, 189]];
     const swimmers = [];
     let fedAt = -1e9;
-    const sizes = [48, 56, 64, 72].map(width => width / 84);   // sprite widths on the badge
+    const sizes = [36, 42, 49, 56].map(width => width / 84);   // sprite widths on the badge
 
     function swim(slot, pet, now, dt) {
         let s = swimmers[slot];
         if (!s || s.species !== pet.species) {
-            s = swimmers[slot] = {species: pet.species, x: 40 + slot * 34, y: 62 + slot * 53 % 100,
+            s = swimmers[slot] = {species: pet.species, x: 44 + (slot % 6) * 46, y: 52 + (slot % 2) * 31 + Math.floor(slot / 6) * 38,
                 tx: 44 + Math.random() * 232, ty: 50 + Math.random() * 118,
-                speed: 14 + slot * 3, dir: 1, phase: slot * 1.3, pause: 0};
+                speed: 14 + slot % 6 * 3, dir: 1, phase: slot * 1.3, pause: 0};
         }
         s.phase += dt * (5 + s.speed / 6);
         if (s.pause > 0) { s.pause -= dt; return s; }
@@ -95,7 +95,7 @@
         tank.scale(s.dir * scale, scale);
         for (let k = 0; k < 7; k++) {                // the art faces right; the tail strips wag most
             const sway = Math.round(Math.sin(s.phase - k * 0.8) * 3 * ((6 - k) / 6) ** 2);
-            tank.drawImage(atlas, sx + k * 12, sy, 12, 60, -42 + k * 12, -30 + sway, 12.4, 60);
+            tank.drawImage(atlas, sx + k * 12, sy, 12, 60, -42 + k * 12, -30 + sway, k === 6 ? 12 : 12.4, 60);
         }
         tank.restore();
     }
@@ -132,7 +132,7 @@
         if (save.decorShown >> 4 & 1) {              // the bubble stone adds its own stream
             tank.fillStyle = 'rgba(205,255,240,0.7)';
             for (let i = 0; i < 5; i++)
-                tank.fillRect(16 + Math.round(3 * Math.sin(t * 3 + i * 2)), Math.round(160 - (t * 30 + i * 31) % 150), 2, 2);
+                tank.fillRect(spots[4][0] + Math.round(3 * Math.sin(t * 3 + i * 2)), Math.round(160 - (t * 30 + i * 31) % 150), 2, 2);
         }
         tank.fillStyle = 'rgba(205,255,240,0.55)';
         for (let i = 0; i < 9; i++) {                // bubbles
@@ -172,7 +172,7 @@
         for (let i = 0; i < stops; i++) {
             const lit = page === 15 ? i === stops - 2 : i === slot;
             tank.fillStyle = lit ? '#ffc85e' : i < save.capacity && save.tank[i].species ? '#68dbb9' : 'rgba(16,47,56,0.8)';
-            tank.beginPath(); tank.roundRect(110 + i * 10, 15, i >= save.capacity ? 9 : 7, 8, 3); tank.fill();
+            tank.beginPath(); tank.roundRect(108 + i * 7.75, 15, i >= save.capacity ? 7 : 5, 8, 3); tank.fill();
         }
         let name, status = '', keys;
         const pet = slot < save.capacity ? save.tank[slot] : null;
@@ -205,14 +205,14 @@
             }
         }
         tank.fillStyle = 'rgba(16,47,56,0.88)';
-        tank.beginPath(); tank.roundRect(8, 184, 304, 50, 10); tank.fill();
-        tank.textAlign = 'left'; tank.fillStyle = page === 12 ? '#ff9a7a' : '#ffefd3'; tank.font = font(15, true);
+        tank.beginPath(); tank.roundRect(8, 197, 304, 37, 9); tank.fill();
+        tank.textAlign = 'left'; tank.fillStyle = page === 12 ? '#ff9a7a' : '#ffefd3';
         tank.font = font(18, true);
-        tank.fillText(name, 18, 206);
+        tank.fillText(name, 18, 213);
         tank.textAlign = 'right'; tank.fillStyle = '#a6c3bc'; tank.font = font(12);
-        tank.fillText(status, 302, 204);
+        tank.fillText(status, 302, 211);
         tank.textAlign = 'left'; tank.fillStyle = '#ffc85e';
-        tank.fillText(keys, 18, 226);
+        tank.fillText(keys, 18, 229);
     }
 
     function render(now) {
@@ -236,7 +236,7 @@
         $('progress').hidden = !fighting;
         $('progress').firstElementChild.style.width = (fighting ? 100 * game.landed / game.required : 0) + '%';
         $('line').hidden = $('float').hidden = page !== 1 && page !== 2 && !fighting;
-        const bookId = game.group * 10 + game.book;
+        const bookId = game.group * GROUP_SIZE + game.book;
         const id = page === 3 && game.result === 0 ? game.caught :
             page === 6 && seen(game, bookId) ? bookId : -1;
         $('fish-art').hidden = id < 0;
@@ -247,7 +247,7 @@
         switch (page) {
             case 0:
                 title = 'NABO 钓鱼小岛';
-                hint = '图鉴 ' + species.filter((_, i) => seen(game, i)).length + '/100 · 出没 ' +
+                hint = '图鉴 ' + species.filter((_, i) => seen(game, i)).length + '/' + species.length + ' · 出没 ' +
                     species.filter((fish, i) => fish.level <= save.rod && active(i, save.clock)).length + ' 种';
                 items = ['钓鱼', '工坊', '图鉴', '鱼缸', '商店'];
                 break;
@@ -310,7 +310,7 @@
                 break;
             case 5:
                 title = '鱼类图鉴';
-                hint = game.group === 10 ? '返回岸边' : '第 ' + (game.group + 1) + ' 册';
+                hint = game.group === GROUP_COUNT ? '返回岸边' : '第 ' + (game.group + 1) + ' 册';
                 items = ['↑↓ 选册', 'OK 确认'];
                 break;
             case 6:
@@ -323,14 +323,14 @@
         if (page === 13) {
             const entry = shelf[game.store];
             const owned = entry.kind === 'decor' ? save.decorOwned >> entry.id & 1 :
-                entry.kind === 'tank' ? save.tanksOwned >> entry.id & 1 : entry.kind === 'room' && save.capacity === 8;
+                entry.kind === 'tank' ? save.tanksOwned >> entry.id & 1 : entry.kind === 'room' && save.capacity === MAX_SLOTS;
             const price = entry.kind === 'box' ? BOX_COST : entry.kind === 'room' ? roomCost(save.capacity) :
                 entry.kind === 'decor' ? decors[entry.id].price : entry.kind === 'tank' ? tanks[entry.id].price : 0;
             title = {box: '盲盒', room: '鱼缸扩容', exit: '返回岸边'}[entry.kind] ||
                 (entry.kind === 'decor' ? decors : tanks)[entry.id].name;
             hint = entry.kind === 'exit' ? '商店 ' + (game.store + 1) + '/' + shelf.length :
                 game.notice === 5 ? '贝壳不足，要 ' + price + ' 贝壳' : game.notice === 8 ? '买到了' :
-                owned ? (entry.kind === 'room' ? '已经是最大的 8 格' : '已拥有') :
+                owned ? (entry.kind === 'room' ? '已经是最大的 ' + MAX_SLOTS + ' 格' : '已拥有') :
                 entry.kind === 'box' ? price + ' 贝壳 · 可开出稀有鱼缸和装饰' :
                 entry.kind === 'room' ? price + ' 贝壳 · ' + save.capacity + ' 格变 ' + (save.capacity + 1) + ' 格' :
                 price + ' 贝壳';
@@ -414,7 +414,7 @@
     debug('add-coins', s => { s.coins += 200; });
     debug('fill-tank', s => s.tank.forEach((pet, i) => {
         if (pet.species || i >= s.capacity) return;
-        pet.species = 1 + Math.floor(Math.random() * 100);
+        pet.species = 1 + Math.floor(Math.random() * species.length);
         pet.growth = Math.floor(Math.random() * 4);
     }));
     $('reset').addEventListener('click', () => {

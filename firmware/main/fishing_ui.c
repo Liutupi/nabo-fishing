@@ -19,7 +19,7 @@ LV_FONT_DECLARE(fishing_font_20);
 
 static lv_obj_t *scene, *actor, *fish_image, *leaping_fish, *placard, *title, *subtitle;
 static lv_obj_t *wallet, *calendar, *footer, *status, *specks[SPECKS];
-static lv_obj_t *hero, *hero_text, *tiles[4], *tile_text[4], *progress, *progress_fill;
+static lv_obj_t *hero, *hero_text, *shop_image, *tiles[FISH_HOME_ITEMS], *tile_text[FISH_HOME_ITEMS], *progress, *progress_fill;
 static lv_obj_t *tension_label, *reel_label;
 static lv_obj_t *meter, *zone, *marker, *bobber, *ripple, *line, *rod, *drops[4];
 static lv_point_precise_t rod_points[3], line_points[3];
@@ -85,9 +85,9 @@ void fishing_ui_init(void)
     placard = block(screen, 10, 153, 220, 69, panel, 11);
     title = label(placard, 4, 8, 212, paper, &fishing_font_20);
     subtitle = label(placard, 4, 39, 212, muted, &fishing_font_14);
-    for (int i = 0; i < 4; i++) {
-        tiles[i] = block(screen, 10 + 56 * i, 231, 53, 49, panel, 8);
-        tile_text[i] = label(tiles[i], 1, 15, 51, paper, &fishing_font_14);
+    for (int i = 0; i < FISH_HOME_ITEMS; i++) {
+        tiles[i] = block(screen, 10 + 44 * i, 231, 42, 49, panel, 8);
+        tile_text[i] = label(tiles[i], 1, 15, 40, paper, &fishing_font_14);
     }
     progress = block(screen, 57, 269, 165, 8, panel, 4);
     progress_fill = block(progress, 0, 0, 1, 8, 0x68dbb9, 4);
@@ -102,6 +102,8 @@ void fishing_ui_init(void)
     hero_text = label(hero, 0, 28, 168, gold, &fishing_font_20);
     fish_image = lv_image_create(hero);
     lv_obj_set_pos(fish_image, (168 - CARD_W) / 2, (84 - CARD_H) / 2);
+    shop_image = lv_image_create(hero);
+    lv_obj_center(shop_image);
     footer = label(screen, 23, 292, 194, paper, &fishing_font_14);
     status = label(screen, 119, 134, 106, paper, &fishing_font_14);
     fishing_tank_init(screen);
@@ -186,7 +188,7 @@ static void drift(const fish_game_t *game, uint32_t now, bool show)
 
 static void animate(const fish_game_t *game, uint32_t now)
 {
-    if (game->page == FISH_TANK || game->page == FISH_CARE || game->page == FISH_SELL) {
+    if (fish_is_aquarium(game->page)) {
         fishing_tank_animate(game, now);
         return;
     }
@@ -321,27 +323,30 @@ static void animate(const fish_game_t *game, uint32_t now)
 void fishing_ui_draw(const fish_game_t *game, uint32_t now, bool save_error)
 {
     static fish_game_t drawn;
-    static bool initialized, last_error;
+    static bool initialized, last_error, box_revealed;
     if (initialized && drawn.page == game->page && drawn.selected == game->selected &&
         drawn.group == game->group && drawn.book == game->book &&
         memcmp(&drawn.save, &game->save, sizeof game->save) == 0 &&
         drawn.result == game->result && drawn.caught == game->caught &&
         drawn.prep == game->prep && drawn.bait == game->bait && drawn.gear == game->gear &&
-        drawn.slot == game->slot && drawn.notice == game->notice && drawn.chum == game->chum &&
+        drawn.slot == game->slot && drawn.store == game->store && drawn.decor == game->decor &&
+        drawn.box_at == game->box_at && (game->page != FISH_BOX || box_revealed == (now - game->box_at >= 900)) &&
+        drawn.notice == game->notice && drawn.chum == game->chum &&
         drawn.chummed == game->chummed && drawn.precise == game->precise && last_error == save_error) {
         animate(game, now);
         return;
     }
     if (!initialized || drawn.page != game->page) page_started = now;
     drawn = *game;
+    box_revealed = game->page == FISH_BOX && now - game->box_at >= 900;
     initialized = true;
     last_error = save_error;
     const char *heading = "", *hint = "", *keys = "", *emblem = "";
     char detail[80], symbol[24];
     int species = -1;
-    const char *menu[] = {"钓鱼", "工坊", "图鉴", "鱼缸"};
+    const char *menu[] = {"钓鱼", "工坊", "图鉴", "鱼缸", "商店"};
     lv_label_set_text_fmt(wallet, "贝壳 %lu", (unsigned long)game->save.coins);
-    for (unsigned i = 0; i < 4; i++) {
+    for (unsigned i = 0; i < FISH_HOME_ITEMS; i++) {
         bool selected = i == game->selected;
         visible(tiles[i], game->page == FISH_HOME);
         lv_obj_set_style_bg_color(tiles[i], lv_color_hex(selected ? gold : panel), 0);
@@ -349,7 +354,7 @@ void fishing_ui_draw(const fish_game_t *game, uint32_t now, bool save_error)
         lv_label_set_text(tile_text[i], menu[i]);
     }
     bool fighting = game->page == FISH_FIGHT;
-    bool aquarium = game->page == FISH_TANK || game->page == FISH_CARE || game->page == FISH_SELL;
+    bool aquarium = fish_is_aquarium(game->page);
     visible(meter, fighting || game->page == FISH_BITE || game->page == FISH_CAST);
     visible(progress, fighting);
     visible(tension_label, fighting);
@@ -374,7 +379,56 @@ void fishing_ui_draw(const fish_game_t *game, uint32_t now, bool save_error)
     const lv_image_dsc_t *shore = fishing_shore(season, period);
     if (lv_image_get_src(scene) != shore) lv_image_set_src(scene, shore);
     lv_label_set_text(status, save_error ? "存档待重试" : "");
+    const lv_image_dsc_t *shop_art = NULL;
+    unsigned shop_scale = 256;
     switch (game->page) {
+        case FISH_STORE: {
+            const fish_item_t item = fish_shelf[game->store];
+            const unsigned price = fish_item_price(game, item);
+            const bool owned = fish_item_owned(game, item);
+            keys = item.kind == FISH_ITEM_EXIT ? "上下 选择    OK 返回" : "上下 选择    OK 购买";
+            if (item.kind == FISH_ITEM_BOX) { heading = "盲盒"; emblem = "?"; }
+            else if (item.kind == FISH_ITEM_ROOM) { heading = "鱼缸扩容"; emblem = "升级鱼缸"; }
+            else if (item.kind == FISH_ITEM_DECOR) {
+                heading = fish_decors[item.id].name; shop_art = fishing_ornament(item.id); shop_scale = 384;
+            } else if (item.kind == FISH_ITEM_TANK) {
+                heading = fish_tank_types[item.id].name; shop_art = fishing_tank_theme(item.id); shop_scale = 160;
+            } else { heading = "返回岸边"; emblem = "商店"; }
+            if (game->notice == FISH_NOTICE_POOR) hint = "贝壳不足";
+            else if (owned) hint = item.kind == FISH_ITEM_ROOM ? "鱼缸已满级" : "已拥有";
+            else if (item.kind == FISH_ITEM_ROOM) {
+                snprintf(detail, sizeof detail, "%u 格到 %u 格 · %u 贝壳", game->save.capacity,
+                         game->save.capacity + 1, price);
+                hint = detail;
+            } else if (item.kind != FISH_ITEM_EXIT) {
+                snprintf(detail, sizeof detail, "%u 贝壳%s", price, game->notice == FISH_NOTICE_BOUGHT ? " · 买到了" : "");
+                hint = detail;
+            }
+            break;
+        }
+        case FISH_BOX:
+            keys = "上 返回    OK 继续";
+            if (!box_revealed) { heading = "盲盒打开中"; emblem = "?"; break; }
+            if (game->prize == FISH_PRIZE_COINS) {
+                heading = "贝壳";
+                snprintf(symbol, sizeof symbol, "+%u", game->prize_coins); emblem = symbol;
+            } else {
+                if (game->prize == FISH_PRIZE_TANK) {
+                    heading = fish_tank_types[game->prize_id].name;
+                    shop_art = fishing_tank_theme(game->prize_id); shop_scale = 160;
+                } else if (game->prize == FISH_PRIZE_FISH) {
+                    snprintf(symbol, sizeof symbol, "异色%s", fish_species[game->prize_id].name);
+                    heading = symbol;
+                    shop_art = fishing_fish_variant(game->prize_id, 0, game->prize_variant);
+                } else {
+                    heading = fish_decors[game->prize_id].name;
+                    shop_art = fishing_ornament(game->prize_id); shop_scale = 384;
+                }
+                if (game->prize_coins) {
+                    snprintf(detail, sizeof detail, "换成 %u 贝壳", game->prize_coins); hint = detail;
+                } else hint = game->prize == FISH_PRIZE_FISH ? "已放进鱼缸" : "已放入鱼缸";
+            }
+            break;
         case FISH_HOME:
             heading = "NABO 钓鱼小岛";
             snprintf(detail, sizeof detail, "图鉴 %u/%u · 出没 %u 种", fish_found(game, 0, FISH_COUNT),
@@ -431,7 +485,7 @@ void fishing_ui_draw(const fish_game_t *game, uint32_t now, bool save_error)
                 heading = fish_species[species].name;
                 if (game->save.pending) {
                     snprintf(detail, sizeof detail, "出售 %u 贝壳 · 鱼缸 %u/%u", fish_species[species].value,
-                             fish_tank_count(game), FISH_TANK_SLOTS);
+                             fish_tank_count(game), game->save.capacity);
                     hint = game->notice == FISH_NOTICE_FULL ? "鱼缸满了，可以出售" : detail;
                     keys = "上 放进鱼缸    下 出售";
                 } else {
@@ -460,16 +514,16 @@ void fishing_ui_draw(const fish_game_t *game, uint32_t now, bool save_error)
             keys = "上 返回  下 换装备  OK 升级";
             break;
         case FISH_BOOK: {
-            unsigned groups = FISH_COUNT / FISH_GROUP_SIZE;
             heading = "鱼类图鉴";
-            if (game->group == groups) {
+            if (game->group == FISH_GROUP_COUNT) {
                 emblem = "返回岸边";
                 keys = "上下 选册    OK 返回";
             } else {
                 unsigned first = game->group * FISH_GROUP_SIZE;
+                unsigned count = fish_group_size(game->group);
                 snprintf(symbol, sizeof symbol, "第 %02u 册", game->group + 1);
                 snprintf(detail, sizeof detail, "本册已发现 %u / %u",
-                         fish_found(game, first, first + FISH_GROUP_SIZE), FISH_GROUP_SIZE);
+                         fish_found(game, first, first + count), count);
                 emblem = symbol;
                 hint = detail;
                 keys = "上下 选册    OK 打开";
@@ -500,6 +554,13 @@ void fishing_ui_draw(const fish_game_t *game, uint32_t now, bool save_error)
             break;
         }
         default: break;
+    }
+    visible(shop_image, shop_art != NULL);
+    if (shop_art) {
+        lv_image_set_src(shop_image, shop_art);
+        lv_image_set_scale(shop_image, shop_scale);
+        lv_obj_center(shop_image);
+        lv_obj_invalidate(shop_image);
     }
     illustrated_species = species;
     lv_label_set_text(hero_text, emblem);

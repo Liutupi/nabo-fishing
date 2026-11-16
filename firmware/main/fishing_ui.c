@@ -19,7 +19,7 @@ LV_FONT_DECLARE(fishing_font_20);
 
 static lv_obj_t *scene, *actor, *fish_image, *leaping_fish, *placard, *title, *subtitle;
 static lv_obj_t *wallet, *calendar, *footer, *status, *specks[SPECKS];
-static lv_obj_t *hero, *hero_text, *shop_image, *tiles[FISH_HOME_ITEMS], *tile_text[FISH_HOME_ITEMS], *progress, *progress_fill;
+static lv_obj_t *hero, *hero_text, *shop_image, *tiles[FISH_HOME_ITEMS + 1], *tile_text[FISH_HOME_ITEMS + 1], *progress, *progress_fill;
 static lv_obj_t *tension_label, *reel_label;
 static lv_obj_t *meter, *zone, *marker, *bobber, *ripple, *line, *rod, *drops[4];
 static lv_point_precise_t rod_points[3], line_points[3];
@@ -85,9 +85,9 @@ void fishing_ui_init(void)
     placard = block(screen, 10, 153, 220, 69, panel, 11);
     title = label(placard, 4, 8, 212, paper, &fishing_font_20);
     subtitle = label(placard, 4, 39, 212, muted, &fishing_font_14);
-    for (int i = 0; i < FISH_HOME_ITEMS; i++) {
-        tiles[i] = block(screen, 10 + 44 * i, 231, 42, 49, panel, 8);
-        tile_text[i] = label(tiles[i], 1, 15, 40, paper, &fishing_font_14);
+    for (int i = 0; i < FISH_HOME_ITEMS + 1; i++) {
+        tiles[i] = block(screen, 9 + 37 * i, 231, 36, 49, panel, 8);
+        tile_text[i] = label(tiles[i], 1, 15, 34, paper, &fishing_font_14);
     }
     progress = block(screen, 57, 269, 165, 8, panel, 4);
     progress_fill = block(progress, 0, 0, 1, 8, 0x68dbb9, 4);
@@ -329,7 +329,9 @@ void fishing_ui_draw(const fish_game_t *game, uint32_t now, bool save_error)
         memcmp(&drawn.save, &game->save, sizeof game->save) == 0 &&
         drawn.result == game->result && drawn.caught == game->caught &&
         drawn.prep == game->prep && drawn.bait == game->bait && drawn.gear == game->gear &&
-        drawn.slot == game->slot && drawn.store == game->store && drawn.decor == game->decor &&
+        drawn.setting == game->setting && drawn.editing == game->editing &&
+        drawn.brightness == game->brightness && drawn.volume == game->volume &&
+        drawn.sleep_index == game->sleep_index && drawn.slot == game->slot && drawn.store == game->store && drawn.decor == game->decor &&
         drawn.box_at == game->box_at && (game->page != FISH_BOX || box_revealed == (now - game->box_at >= 900)) &&
         drawn.notice == game->notice && drawn.chum == game->chum &&
         drawn.chummed == game->chummed && drawn.precise == game->precise && last_error == save_error) {
@@ -344,9 +346,9 @@ void fishing_ui_draw(const fish_game_t *game, uint32_t now, bool save_error)
     const char *heading = "", *hint = "", *keys = "", *emblem = "";
     char detail[80], symbol[24];
     int species = -1;
-    const char *menu[] = {"钓鱼", "工坊", "图鉴", "鱼缸", "商店"};
+    const char *menu[] = {"钓鱼", "工坊", "图鉴", "鱼缸", "商店", "设置"};
     lv_label_set_text_fmt(wallet, "贝壳 %lu", (unsigned long)game->save.coins);
-    for (unsigned i = 0; i < FISH_HOME_ITEMS; i++) {
+    for (unsigned i = 0; i < FISH_HOME_ITEMS + 1; i++) {
         bool selected = i == game->selected;
         visible(tiles[i], game->page == FISH_HOME);
         lv_obj_set_style_bg_color(tiles[i], lv_color_hex(selected ? gold : panel), 0);
@@ -429,6 +431,21 @@ void fishing_ui_draw(const fish_game_t *game, uint32_t now, bool save_error)
                 } else hint = game->prize == FISH_PRIZE_FISH ? "已放进鱼缸" : "已放入鱼缸";
             }
             break;
+        case FISH_SETTINGS: {
+            static const char *const names[] = {"亮度", "音量", "息屏时间", "返回岸边"};
+            heading = names[game->setting];
+            if (game->setting < 2)
+                snprintf(symbol, sizeof symbol, "%u%%", game->setting ? game->volume : game->brightness);
+            else if (game->setting == 2 && game->sleep_index)
+                snprintf(symbol, sizeof symbol, "%u 秒", fish_sleep_seconds[game->sleep_index]);
+            else if (game->setting == 2) snprintf(symbol, sizeof symbol, "不自动息屏");
+            else symbol[0] = 0;
+            emblem = symbol;
+            hint = game->setting == 2 ? "无操作后息屏，按键唤醒" :
+                   game->setting == 1 && !game->volume ? "已静音" : "";
+            keys = game->editing ? "上下 调节  OK 完成" : "上下 选择  OK 确认";
+            break;
+        }
         case FISH_HOME:
             heading = "NABO 钓鱼小岛";
             snprintf(detail, sizeof detail, "图鉴 %u/%u · 出没 %u 种", fish_found(game, 0, FISH_COUNT),

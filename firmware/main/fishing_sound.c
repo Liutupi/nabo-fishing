@@ -7,7 +7,6 @@
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
-#include "nvs.h"
 
 #define PCM_CLIP(name) \
     extern const int16_t name##_start[] asm("_binary_" #name "_pcm_start"); \
@@ -77,21 +76,8 @@ static void audio_task(void *arg)
     }
 }
 
-bool fishing_sound_init(void)
+bool fishing_sound_init(uint8_t volume)
 {
-    nvs_handle_t settings;
-    int32_t volume = 82;
-    uint8_t speaker = 1;
-    if (nvs_open("nabo_ui", NVS_READONLY, &settings) == ESP_OK) {
-        nvs_get_i32(settings, "volume", &volume);
-        nvs_get_u8(settings, "speaker", &speaker);
-        nvs_close(settings);
-    }
-    if (!speaker || volume <= 0) {
-        ESP_LOGI("NABO-Sound", "saved speaker is muted");
-        return true;
-    }
-    if (volume > 100) volume = 100;
     requests = xQueueCreate(1, sizeof(fishing_sound_t));
     codec_lock = xSemaphoreCreateMutex();
     if (!requests || !codec_lock) return false;
@@ -101,6 +87,14 @@ bool fishing_sound_init(void)
     ESP_LOGI("NABO-Sound", "speaker enabled, volume %ld", (long)volume);
     ready = xTaskCreate(audio_task, "fish_audio", 4096, NULL, 4, NULL) == pdPASS;
     return ready;
+}
+
+void fishing_sound_volume(uint8_t volume)
+{
+    if (!ready) return;
+    xSemaphoreTake(codec_lock, portMAX_DELAY);
+    bsp_audio_set_volume(volume);
+    xSemaphoreGive(codec_lock);
 }
 
 void fishing_sound_play(fishing_sound_t sound)

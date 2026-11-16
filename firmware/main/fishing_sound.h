@@ -7,6 +7,8 @@ typedef enum {
     SOUND_LAND, SOUND_MISS, SOUND_UPGRADE,
 } fishing_sound_t;
 
-bool fishing_sound_init(void);
+#include <stdint.h>
+bool fishing_sound_init(uint8_t volume);
+void fishing_sound_volume(uint8_t volume);
 void fishing_sound_play(fishing_sound_t sound);
 void fishing_sound_sleep(void);

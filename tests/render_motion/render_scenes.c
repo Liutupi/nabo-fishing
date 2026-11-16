@@ -62,11 +62,33 @@ static void start(fish_save_t progress)
     run(400);
 }
 
+#include "src/misc/lv_text_private.h"
+LV_FONT_DECLARE(fishing_font_14);
+LV_FONT_DECLARE(fishing_font_20);
+
+static void check_text_glyphs(void)
+{
+    const lv_font_t *fonts[] = {&fishing_font_14, &fishing_font_20};
+    for (unsigned i = 0; i < 2; i++) {
+        const char *characters = "·一丁七上下不丑丛丝中丽乌习买了云亮仙以任优会位低作你倒偏像儿先光入全养册再冬冰准凤凰出刀切到刺前剑力动区升去发取口叭可吃吊后向吧吸和咬唤售商喂喇嘴四回团图在坊型城堆堡塘壳备夏夜大天头好子孔存季完宝容射小尾屏岛岸川工差已布帝带常幻幽店度开异引张录彗彩待快性息想意成扎打扣扩扳抛拟拥择指按挣换掠摆操收放斑斗料斧断无时昏星春昼晚晨晶更月有木未本机条来松极枝枪柠标格桂档梦梭樱檬歇母比气水江沉沙没河泡泥浮海消淡清游湾满漂潜火灯点照爱狗狮玛玫现珊珍珠瑚瑰白的皇盒盔目盲看眼着瞄知石确礁神秋种秒空窝竿第等箱类精紫红级纹线经继续缓缸罐置翻肉自船色节花苔苗茴草莲蓝藻虹蚓蚯蜜蝎蝶蟾装解认设试调贝购费赤走起足跳边过返还进退选遛醒重量金鉴针钓钩银锁锦键镜长间降陪陶隆雀雪静面音须飞食饵马鬼鱥鱼鲀鲃鲈鲏鲑鲟鲢鲤鲫鲭鲮鲳鲶鲷鲸鲻鳃鳅鳊鳍鳑鳕鳗鳟鳢鹦黄黑鼠龙，";
+        uint32_t offset = 0;
+        while (characters[offset]) {
+            uint32_t codepoint = lv_text_encoded_next(characters, &offset);
+            lv_font_glyph_dsc_t glyph;
+            if (!lv_font_get_glyph_dsc(fonts[i], &glyph, codepoint, 0) || glyph.is_placeholder) {
+                fprintf(stderr, "Missing glyph U+%04lX in font %u\n", (unsigned long)codepoint, i);
+                abort();
+            }
+        }
+    }
+}
+
 int main(int argc, char **argv)
 {
     if (argc != 2) return 2;
     directory = argv[1];
     lv_init();
+    check_text_glyphs();
     display = lv_display_create(240, 320);
     lv_display_set_buffers(display, strip, NULL, sizeof strip, LV_DISPLAY_RENDER_MODE_PARTIAL);
     lv_display_set_flush_cb(display, flush);
@@ -113,7 +135,7 @@ int main(int argc, char **argv)
     full.tank[4] = (fish_pet_t){.species = FISH_COUNT, .growth = 3};
     full.tank[5] = (fish_pet_t){.species = 51, .growth = 2};
     start(full);
-    press(FISH_UP); press(FISH_UP);
+    press(FISH_UP); press(FISH_UP); press(FISH_UP);
     press(FISH_OK);
     assert(game.page == FISH_TANK && lv_display_get_horizontal_resolution(display) == 320);
     run(3000);
@@ -145,7 +167,7 @@ int main(int argc, char **argv)
     save("catalog-after-tank");
 
     start((fish_save_t){.rod = 1, .line = 1});
-    press(FISH_UP); press(FISH_UP); press(FISH_OK);
+    press(FISH_UP); press(FISH_UP); press(FISH_UP); press(FISH_OK);
     run(400);
     save("tank-empty");
 
@@ -156,7 +178,7 @@ int main(int argc, char **argv)
     for (unsigned i = 0; i < FISH_TANK_SLOTS; i++)
         full.tank[i] = (fish_pet_t){.species = 101 + i, .growth = i % 4, .variant = i % 3};
     start(full);
-    press(FISH_UP); press(FISH_OK);
+    press(FISH_UP); press(FISH_UP); press(FISH_OK);
     save("store-blind-box");
     press(FISH_OK);
     run(960);

@@ -1,5 +1,7 @@
 #include "fishing_model.h"
 
+const uint16_t fish_sleep_seconds[7] = {0, 30, 60, 120, 300, 600, 900};
+
 const fish_species_t fish_species[FISH_COUNT] = {
 #include "fishing_species.inc"
 };
@@ -90,7 +92,7 @@ void fish_init(fish_game_t *game, fish_save_t save, uint32_t seed)
         if (i >= save.capacity || !pet->species || pet->species > FISH_COUNT || pet->growth > FISH_MAX_GROWTH || pet->fed > 1)
             *pet = (fish_pet_t){0};
     }
-    *game = (fish_game_t){.save = save, .rng = seed};
+    *game = (fish_game_t){.save = save, .rng = seed, .brightness = 80, .volume = 82, .sleep_index = 3};
     if (save.pending) {
         game->page = FISH_RESULT;
         game->caught = save.pending - 1;
@@ -357,9 +359,14 @@ bool fish_press(fish_game_t *game, fish_button_t button, uint32_t now)
     if (before != FISH_RESULT && game->page == FISH_RESULT && button == FISH_OK) return false;
     switch (game->page) {
         case FISH_HOME: {
-            static const fish_page_t pages[] = {FISH_PREP, FISH_SHOP, FISH_BOOK, FISH_TANK, FISH_STORE};
-            if (button == FISH_UP) game->selected = (game->selected + FISH_HOME_ITEMS - 1) % FISH_HOME_ITEMS;
-            if (button == FISH_DOWN) game->selected = (game->selected + 1) % FISH_HOME_ITEMS;
+            static const fish_page_t pages[] = {FISH_PREP, FISH_SHOP, FISH_BOOK, FISH_TANK, FISH_STORE, FISH_SETTINGS};
+#ifndef FISH_LEGACY_CATALOG
+            const unsigned home_items = FISH_HOME_ITEMS + 1;
+#else
+            const unsigned home_items = FISH_HOME_ITEMS;
+#endif
+            if (button == FISH_UP) game->selected = (game->selected + home_items - 1) % home_items;
+            if (button == FISH_DOWN) game->selected = (game->selected + 1) % home_items;
             if (button == FISH_OK) set_page(game, pages[game->selected]);
             break;
         }
@@ -511,6 +518,31 @@ bool fish_press(fish_game_t *game, fish_button_t button, uint32_t now)
             game->notice = FISH_NOTICE_FED;
             return true;
         }
+        case FISH_SETTINGS:
+            if (button == FISH_OK) {
+                if (game->setting == 3) set_page(game, FISH_HOME);
+                else game->editing = !game->editing;
+                break;
+            }
+            if (!game->editing) {
+                game->setting = (game->setting + (button == FISH_UP ? 3 : 1)) % 4;
+                break;
+            }
+            int step = button == FISH_UP ? 1 : -1;
+            if (game->setting == 2) {
+                int index = game->sleep_index + step;
+                if (index < 0 || index > 6) break;
+                game->sleep_index = index;
+            } else {
+                uint8_t *value = game->setting == 0 ? &game->brightness : &game->volume;
+                int next = *value + step * 10;
+                int minimum = game->setting == 0 ? 10 : 0;
+                if (next < minimum) next = minimum;
+                if (next > 100) next = 100;
+                if (next == *value) break;
+                *value = next;
+            }
+            break;
         case FISH_SELL:
             if (button == FISH_UP) set_page(game, FISH_CARE);
             if (button != FISH_OK) break;

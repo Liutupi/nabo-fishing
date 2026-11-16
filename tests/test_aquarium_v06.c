@@ -4,6 +4,14 @@
 
 int main(void)
 {
+    fish_game_t settings;
+    fish_init(&settings, (fish_save_t){.rod = 1, .line = 1}, 0);
+    fish_press(&settings, FISH_UP, 0);
+    fish_press(&settings, FISH_OK, 1);
+    assert(settings.page == FISH_SETTINGS);
+    fish_press(&settings, FISH_OK, 2);
+    fish_press(&settings, FISH_DOWN, 3);
+    assert(settings.brightness == 70);
     const uint32_t old[FISH_RECORD_WORDS_V4] = {
         5000, 4, 0, 0, 0, 1u << 19, 3, 0, 101 | 2u << 8 | 1u << 16, 0, 0, 0, 0, 0, 143,
     };
@@ -14,6 +22,7 @@ int main(void)
 
     fish_game_t game;
     fish_init(&game, save, 11);
+    fish_press(&game, FISH_UP, 0);
     fish_press(&game, FISH_UP, 0);
     fish_press(&game, FISH_OK, 0);
     assert(game.page == FISH_STORE);

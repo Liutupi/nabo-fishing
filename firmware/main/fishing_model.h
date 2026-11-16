@@ -42,7 +42,7 @@ static inline unsigned fish_group_size(unsigned group)
 
 typedef enum {
     FISH_HOME, FISH_WAIT, FISH_BITE, FISH_RESULT, FISH_SHOP, FISH_BOOK, FISH_BOOK_FISH,
-    FISH_PREP, FISH_CAST, FISH_FIGHT, FISH_TANK, FISH_CARE, FISH_SELL, FISH_STORE, FISH_BOX, FISH_DECOR,
+    FISH_PREP, FISH_CAST, FISH_FIGHT, FISH_TANK, FISH_CARE, FISH_SELL, FISH_STORE, FISH_BOX, FISH_DECOR, FISH_SETTINGS,
 } fish_page_t;
 typedef enum { FISH_UP, FISH_DOWN, FISH_OK } fish_button_t;
 typedef enum { FISH_CAUGHT, FISH_MISSED, FISH_TIMEOUT, FISH_SNAPPED } fish_result_t;
@@ -72,9 +72,12 @@ typedef struct {
     uint8_t store, decor, prize, prize_id, prize_variant;
     uint32_t box_at;
     uint16_t prize_coins;
+    uint8_t setting, brightness, volume, sleep_index;
+    bool editing;
     bool chum, chummed, precise;
 } fish_game_t;
 
+extern const uint16_t fish_sleep_seconds[7];
 extern const fish_species_t fish_species[FISH_COUNT];
 extern const char *const fish_bait_names[FISH_BAIT_COUNT];
 void fish_init(fish_game_t *game, fish_save_t save, uint32_t seed);
